@@ -10,12 +10,14 @@ import type { EditorDocument, WritableFileHandle } from './types'
 function App() {
   const [documents, setDocuments] = useState<EditorDocument[]>(() => [createDocument()])
   const [activeId, setActiveId] = useState(() => documents[0].id)
+  const [inactiveDocument] = useState(() => createDocument())
   const [vimEnabled, setVimEnabled] = useState(() => localStorage.getItem('typst-edit.vim-mode') === 'true')
   const fileInputRef = useRef<HTMLInputElement>(null)
   const documentsRef = useRef(documents)
   documentsRef.current = documents
 
   const activeDocument = documents.find(({ id }) => id === activeId) ?? documents[0]
+  const compilationDocument = activeDocument ?? inactiveDocument
 
   const updateDocument = (id: string, update: Partial<EditorDocument>) => {
     setDocuments((current) => current.map((document) => (
@@ -23,8 +25,8 @@ function App() {
     )))
   }
 
-  useTypstCompilation(activeDocument, updateDocument)
-  const sourcePreviewSync = useSourcePreviewSync(activeDocument)
+  useTypstCompilation(compilationDocument, updateDocument)
+  const sourcePreviewSync = useSourcePreviewSync(compilationDocument)
 
   useEffect(() => {
     localStorage.setItem('typst-edit.vim-mode', String(vimEnabled))
@@ -44,6 +46,7 @@ function App() {
   }
 
   const showDocumentError = (message: string) => {
+    if (!activeDocument) return
     updateDocument(activeId, { compileState: 'error', messages: [message] })
   }
 
@@ -101,6 +104,7 @@ function App() {
 
   const saveFile = async () => {
     const document = activeDocument
+    if (!document) return
     if (window.typstDesktop) {
       try {
         const saved = await window.typstDesktop.saveDocument({
@@ -154,9 +158,8 @@ function App() {
     if (closing.pdfUrl) URL.revokeObjectURL(closing.pdfUrl)
 
     if (documents.length === 1) {
-      const replacement = createDocument()
-      setDocuments([replacement])
-      setActiveId(replacement.id)
+      setDocuments([])
+      setActiveId('')
       return
     }
 
@@ -203,7 +206,7 @@ function App() {
       />
       <Toolbar
         document={activeDocument}
-        pdfFileName={createPdfFilename(activeDocument)}
+        pdfFileName={activeDocument ? createPdfFilename(activeDocument) : undefined}
         onOpen={() => void openFile()}
         onSave={() => void saveFile()}
         vimEnabled={vimEnabled}
@@ -216,19 +219,26 @@ function App() {
         onClose={closeDocument}
         onNew={() => addDocument(createDocument())}
       />
-      <Workspace
-        document={activeDocument}
-        onSourceChange={(source) => updateDocument(activeDocument.id, {
-          source,
-          sourceRevision: activeDocument.sourceRevision + 1,
-          isDirty: true,
-        })}
-        vimEnabled={vimEnabled}
-        previewPositions={sourcePreviewSync.positions}
-        sourceCursorLocation={sourcePreviewSync.sourceCursorLocation}
-        sourceSyncStatus={sourcePreviewSync.status}
-        onCursorPositionChange={sourcePreviewSync.locate}
-      />
+      {activeDocument ? (
+        <Workspace
+          document={activeDocument}
+          onSourceChange={(source) => updateDocument(activeDocument.id, {
+            source,
+            sourceRevision: activeDocument.sourceRevision + 1,
+            isDirty: true,
+          })}
+          vimEnabled={vimEnabled}
+          previewPositions={sourcePreviewSync.positions}
+          sourceCursorLocation={sourcePreviewSync.sourceCursorLocation}
+          sourceSyncStatus={sourcePreviewSync.status}
+          onCursorPositionChange={sourcePreviewSync.locate}
+        />
+      ) : (
+        <section className="workspace-empty">
+          <strong>No document open</strong>
+          <span>Open a Typst file or create a new tab.</span>
+        </section>
+      )}
     </main>
   )
 }

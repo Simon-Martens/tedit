@@ -1,17 +1,6 @@
 import type { EditorDocument } from '../types'
 
-export const INITIAL_SOURCE = `#set page(paper: "a4", margin: 2.4cm)
-#set text(font: "Libertinus Serif", size: 11pt)
-#set heading(numbering: "1.")
-
-= A new Typst document
-
-Open a ".typ" file to begin, or replace this text with your own.
-
-#line(length: 100%)
-
-This preview is compiled locally in your browser.
-`
+export const INITIAL_SOURCE = ''
 
 function parseTypstString(value: string) {
   try {

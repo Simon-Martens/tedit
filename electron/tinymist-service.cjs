@@ -180,10 +180,23 @@ class TinymistService {
     clearTimeout(this.locateSettleTimer)
     this.locateSettleTimer = undefined
     this.latestLocate = undefined
-    if (this.child && this.child.exitCode === null) this.child.kill()
+    const child = this.child
     this.child = undefined
     this.documentId = undefined
     this.filePath = undefined
+    if (child && child.exitCode === null) {
+      const exited = new Promise((resolve) => child.once('exit', resolve))
+      child.kill()
+      let timeout
+      await Promise.race([
+        exited,
+        new Promise((resolve) => {
+          timeout = setTimeout(resolve, 500)
+        }),
+      ])
+      clearTimeout(timeout)
+      if (child.exitCode === null) child.kill('SIGKILL')
+    }
   }
 }
 

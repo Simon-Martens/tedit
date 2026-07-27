@@ -3,8 +3,8 @@ import { SettingsMenu } from './SettingsMenu'
 import type { EditorDocument } from '../types'
 
 interface ToolbarProps {
-  document: EditorDocument
-  pdfFileName: string
+  document?: EditorDocument
+  pdfFileName?: string
   onOpen(): void
   onSave(): void
   vimEnabled: boolean
@@ -27,26 +27,26 @@ export function Toolbar({
       </div>
       <div className="document-title">
         <Icon name="file" />
-        <span>{document.fileName}</span>
-        {document.isDirty && <span className="dirty-dot" title="Unsaved changes" />}
+        <span>{document?.fileName ?? 'No document'}</span>
+        {document?.isDirty && <span className="dirty-dot" title="Unsaved changes" />}
       </div>
       <div className="toolbar">
         <button type="button" onClick={onOpen}>
           <Icon name="open" />
           <span>Open</span>
         </button>
-        <button type="button" onClick={onSave}>
+        <button type="button" onClick={onSave} disabled={!document}>
           <Icon name="save" />
           <span>Save</span>
         </button>
         <a
-          className={document.pdfUrl ? 'button-link' : 'button-link disabled'}
-          href={document.pdfUrl}
+          className={document?.pdfUrl ? 'button-link' : 'button-link disabled'}
+          href={document?.pdfUrl}
           download={pdfFileName}
-          title={`Download ${pdfFileName}`}
-          aria-disabled={!document.pdfUrl}
+          title={pdfFileName ? `Download ${pdfFileName}` : 'No PDF available'}
+          aria-disabled={!document?.pdfUrl}
           onClick={(event) => {
-            if (!document.pdfUrl) event.preventDefault()
+            if (!document?.pdfUrl) event.preventDefault()
           }}
         >
           <Icon name="download" />

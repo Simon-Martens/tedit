@@ -52,6 +52,9 @@ function sourceSignature(source: string, location: SourceCursorLocation): Source
   const lines = source.split(/\r?\n/)
   let sourcePosition = location.cursor
   const cursorLine = lines[location.cursor.line]
+  if (cursorLine === undefined || !/[\p{L}\p{N}\p{M}_]/u.test(cursorLine)) {
+    sourcePosition = location.lookup
+  }
   if (cursorLine !== undefined && location.cursor.line === location.lookup.line) {
     const cursorIndex = utf8ByteToStringIndex(cursorLine, location.cursor.character)
     for (const link of cursorLine.matchAll(/#link\s*\([^)]*\)\s*\[([^\]]*)\]/g)) {

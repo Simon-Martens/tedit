@@ -165,6 +165,8 @@ if (!app.requestSingleInstanceLock()) {
 }
 
 app.on('window-all-closed', () => {
-  void tinymist.stop()
-  if (process.platform !== 'darwin') app.quit()
+  void tinymist.stop().finally(() => {
+    if (process.platform === 'linux') app.exit(0)
+    else if (process.platform !== 'darwin') app.quit()
+  })
 })
