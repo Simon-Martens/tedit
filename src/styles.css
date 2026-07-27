@@ -1,0 +1,904 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
+
+:root {
+  color: #e8e9e3;
+  background: #11120f;
+  font-family: 'DM Sans', system-ui, sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+}
+
+button,
+a {
+  font: inherit;
+}
+
+button:focus-visible,
+a:focus-visible {
+  outline: 2px solid #d9fa66;
+  outline-offset: 2px;
+}
+
+.app-shell {
+  display: grid;
+  grid-template-rows: 44px 34px minmax(0, 1fr);
+  height: 100%;
+  background: #11120f;
+}
+
+.topbar {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  padding: 0 9px 0 12px;
+  border-bottom: 1px solid #30322b;
+  background: #171814;
+}
+
+.brand,
+.document-title,
+.toolbar,
+.topbar button,
+.button-link {
+  display: flex;
+  align-items: center;
+}
+
+.brand {
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.brand-mark {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  border-radius: 7px;
+  color: #161810;
+  background: #d9fa66;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.document-title {
+  gap: 7px;
+  color: #b9bbb2;
+  font-size: 12px;
+}
+
+.document-title svg,
+.topbar button svg,
+.button-link svg,
+.tab-bar svg {
+  width: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.7;
+}
+
+.tab-bar {
+  display: flex;
+  min-width: 0;
+  align-items: stretch;
+  border-bottom: 1px solid #30322b;
+  background: #151612;
+}
+
+.tab-list {
+  display: flex;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: #3c3e36 transparent;
+}
+
+.document-tab {
+  position: relative;
+  display: flex;
+  width: 190px;
+  min-width: 110px;
+  max-width: 220px;
+  align-items: center;
+  gap: 7px;
+  padding: 0 8px 0 12px;
+  border: 0;
+  border-right: 1px solid #2c2e28;
+  color: #8f9288;
+  background: #181915;
+  cursor: pointer;
+  font-size: 10px;
+  text-align: left;
+}
+
+.document-tab::after {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 2px;
+  content: '';
+  background: transparent;
+}
+
+.document-tab:hover {
+  color: #d2d4cc;
+  background: #1e201b;
+}
+
+.document-tab.active {
+  color: #e4e5df;
+  background: #22231e;
+}
+
+.document-tab.active::after {
+  background: #d9fa66;
+}
+
+.document-tab > svg {
+  width: 14px;
+  flex: 0 0 auto;
+}
+
+.tab-name {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tab-dirty {
+  width: 6px;
+  height: 6px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: #d9fa66;
+}
+
+.tab-close {
+  display: grid;
+  width: 21px;
+  height: 21px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 5px;
+  opacity: 0;
+}
+
+.document-tab:hover .tab-close,
+.document-tab.active .tab-close,
+.tab-close:focus-visible {
+  opacity: 1;
+}
+
+.tab-close:hover {
+  color: #fff;
+  background: #393b33;
+}
+
+.tab-close svg,
+.new-tab svg {
+  width: 13px;
+}
+
+.new-tab {
+  display: grid;
+  width: 34px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 0;
+  border-right: 1px solid #2c2e28;
+  color: #92958a;
+  background: #181915;
+  cursor: pointer;
+}
+
+.new-tab:hover {
+  color: #d9fa66;
+  background: #22231e;
+}
+
+.dirty-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #d9fa66;
+}
+
+.toolbar {
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.settings-menu {
+  position: relative;
+  display: flex;
+}
+
+.topbar .settings-trigger {
+  width: 28px;
+  padding: 0;
+  justify-content: center;
+}
+
+.topbar .settings-trigger.active {
+  border-color: #626650;
+  color: #d9fa66;
+  background: #2c2e27;
+}
+
+.settings-popover {
+  position: absolute;
+  z-index: 50;
+  top: calc(100% + 8px);
+  right: 0;
+  width: 230px;
+  padding: 8px;
+  border: 1px solid #3d4037;
+  border-radius: 7px;
+  color: #dfe0da;
+  background: #20211d;
+  box-shadow: 0 14px 32px rgb(0 0 0 / 45%);
+}
+
+.settings-popover-title {
+  padding: 3px 6px 8px;
+  color: #8f9288;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.setting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.setting-row:hover {
+  background: #292b25;
+}
+
+.setting-row > span {
+  display: grid;
+  gap: 2px;
+}
+
+.setting-row strong {
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.setting-row small {
+  color: #85887e;
+  font-size: 9px;
+}
+
+.setting-row input {
+  position: relative;
+  width: 28px;
+  height: 16px;
+  flex: 0 0 auto;
+  margin: 0;
+  border: 1px solid #51544a;
+  border-radius: 8px;
+  appearance: none;
+  background: #34362f;
+  cursor: pointer;
+}
+
+.setting-row input::after {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  content: '';
+  background: #92958b;
+  transition: transform 120ms ease, background 120ms ease;
+}
+
+.setting-row input:checked {
+  border-color: #82933f;
+  background: #3e4825;
+}
+
+.setting-row input:checked::after {
+  background: #d9fa66;
+  transform: translateX(12px);
+}
+
+.topbar button,
+.button-link {
+  height: 28px;
+  gap: 6px;
+  padding: 0 8px;
+  border: 1px solid #363830;
+  border-radius: 6px;
+  font-size: 11px;
+  color: #d6d7d1;
+  background: #22231e;
+  cursor: pointer;
+  text-decoration: none;
+  transition: border-color 120ms ease, background 120ms ease;
+}
+
+.topbar button:hover,
+.button-link:hover {
+  border-color: #53564a;
+  background: #292b24;
+}
+
+.button-link.disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.workspace {
+  display: grid;
+  min-height: 0;
+  overflow: hidden;
+  grid-template-columns: minmax(280px, var(--left-pane-size)) 6px minmax(280px, 1fr);
+}
+
+.left-pane {
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  grid-template-rows: minmax(180px, var(--source-pane-size)) 6px minmax(120px, 1fr);
+}
+
+.left-pane.output-auto {
+  grid-template-rows: minmax(180px, 1fr) 1px var(--output-pane-size);
+}
+
+.output-auto-divider {
+  background: #30322b;
+}
+
+.source-panel,
+.output-panel,
+.preview-panel {
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  grid-template-rows: 31px minmax(0, 1fr);
+  overflow: hidden;
+}
+
+.source-panel.vim-enabled {
+  grid-template-rows: 31px minmax(0, 1fr) 24px;
+}
+
+.pane-resizer {
+  position: relative;
+  z-index: 5;
+  padding: 0;
+  background: #242620;
+  touch-action: none;
+  user-select: none;
+}
+
+.pane-resizer::after {
+  position: absolute;
+  content: '';
+  background: #3a3c34;
+  transition: background 120ms ease, box-shadow 120ms ease;
+}
+
+.pane-resizer:hover::after,
+.pane-resizer:focus-visible::after {
+  background: #d9fa66;
+  box-shadow: 0 0 8px rgb(217 250 102 / 25%);
+}
+
+.pane-resizer:focus-visible {
+  outline: none;
+}
+
+.column-resizer {
+  cursor: col-resize;
+}
+
+.column-resizer::after {
+  inset: 0 2px;
+}
+
+.row-resizer {
+  cursor: row-resize;
+}
+
+.row-resizer::after {
+  inset: 2px 0;
+}
+
+.panel-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 10px;
+  color: #d5d6cf;
+  background: #1c1d19;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.panel-meta {
+  color: #787b70;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  font-weight: 400;
+  letter-spacing: 0.02em;
+  text-transform: none;
+}
+
+.panel-actions {
+  display: flex;
+  align-items: center;
+}
+
+.panel-actions {
+  gap: 6px;
+}
+
+.compile-time {
+  padding: 2px 4px;
+  border: 1px solid #42463a;
+  border-radius: 3px;
+  color: #aebc83;
+  background: #272a21;
+  font: 10px/1.2 'JetBrains Mono', monospace;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.output-toggle {
+  display: grid;
+  width: 21px;
+  height: 21px;
+  padding: 0;
+  place-items: center;
+  border: 0;
+  border-radius: 4px;
+  color: #8e9187;
+  background: transparent;
+  cursor: pointer;
+}
+
+.output-toggle:hover {
+  color: #d9fa66;
+  background: #2e3029;
+}
+
+.output-toggle svg {
+  width: 13px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.7;
+}
+
+.editor-wrap {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: #1e1e1e;
+}
+
+.editor-wrap > section {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.vim-status-bar {
+  display: none;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  padding: 0 9px;
+  overflow: hidden;
+  border-top: 1px solid #34362f;
+  color: #afb2a8;
+  background: #191a17;
+  font: 10px/23px 'JetBrains Mono', monospace;
+  white-space: nowrap;
+}
+
+.vim-enabled .vim-status-bar {
+  display: flex;
+}
+
+.vim-status-bar > span:first-child {
+  color: #d9fa66;
+  font-weight: 500;
+}
+
+.vim-status-bar .vim-notification {
+  color: #ff9a8d;
+}
+
+.vim-status-bar input {
+  min-width: 100px;
+  flex: 1;
+  border: 0;
+  outline: 0;
+  color: #e6e7e1;
+  background: transparent;
+  font: inherit;
+}
+
+.editor-loading {
+  display: grid;
+  height: 100%;
+  place-items: center;
+  color: #8d9086;
+  font: 12px 'JetBrains Mono', monospace;
+}
+
+.output-panel {
+  background: #151612;
+}
+
+.status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #979a90;
+  font-size: 9px;
+}
+
+.status i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.status-success {
+  color: #b9dc55;
+}
+
+.status-error {
+  color: #ff7f6e;
+}
+
+.status-loading i,
+.status-compiling i {
+  animation: pulse 1s infinite alternate;
+  color: #e6b85c;
+}
+
+.output-lines {
+  min-height: 0;
+  padding: 11px 13px;
+  overflow: auto;
+  color: #a7aaa0;
+  font: 11px/1.7 'JetBrains Mono', monospace;
+  scrollbar-color: #44463d transparent;
+}
+
+.output-lines > div {
+  display: flex;
+  gap: 9px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.prompt {
+  color: #d9fa66;
+  user-select: none;
+}
+
+.log-error,
+.log-error .prompt {
+  color: #ff8b7c;
+}
+
+.preview-panel {
+  grid-template-rows: 32px minmax(0, 1fr);
+  background: #292a26;
+}
+
+.preview-heading {
+  padding-right: 4px;
+  background: #1a1b17;
+}
+
+.preview-title {
+  display: flex;
+  height: 100%;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 7px;
+  line-height: 1;
+}
+
+.preview-spinner {
+  width: 9px;
+  height: 9px;
+  border: 1.5px solid #55594b;
+  border-top-color: #d9fa66;
+  border-radius: 50%;
+  animation: spin 700ms linear infinite;
+}
+
+.preview-surface {
+  position: relative;
+  min-height: 0;
+  padding: 6px;
+  background-color: #292a26;
+  background-image: radial-gradient(#3b3d36 0.8px, transparent 0.8px);
+  background-size: 16px 16px;
+}
+
+.pdf-toolbar {
+  display: flex;
+  min-width: 0;
+  height: 100%;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 1px;
+}
+
+.pdf-toolbar button,
+.pdf-toolbar > a {
+  display: grid;
+  width: 27px;
+  height: 26px;
+  flex: 0 0 auto;
+  padding: 0;
+  place-items: center;
+  border: 0;
+  border-radius: 3px;
+  color: #a9aca2;
+  background: transparent;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.pdf-toolbar button:hover:not(:disabled),
+.pdf-toolbar > a:hover:not(.disabled) {
+  color: #eff0eb;
+  background: #34362f;
+}
+
+.pdf-toolbar button:disabled,
+.pdf-toolbar > a.disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.pdf-toolbar svg {
+  width: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.7;
+}
+
+.pdf-toolbar-separator {
+  width: 1px;
+  height: 16px;
+  margin: 0 3px;
+  flex: 0 0 auto;
+  background: #3a3c34;
+}
+
+.pdf-page-control {
+  display: flex;
+  height: 26px;
+  align-items: center;
+  gap: 3px;
+  padding: 0 4px;
+  color: #8f9288;
+  font: 9px 'JetBrains Mono', monospace;
+}
+
+.pdf-page-control input {
+  width: 28px;
+  height: 20px;
+  padding: 0 2px;
+  border: 1px solid #3b3d35;
+  border-radius: 3px;
+  outline: 0;
+  color: #d7d8d2;
+  background: #22231e;
+  font: inherit;
+  text-align: center;
+  appearance: textfield;
+}
+
+.pdf-page-control input::-webkit-inner-spin-button {
+  display: none;
+}
+
+.pdf-page-control input:focus {
+  border-color: #8ca13f;
+}
+
+.pdf-zoom-value {
+  min-width: 34px;
+  color: #9da096;
+  font: 8px 'JetBrains Mono', monospace;
+  text-align: center;
+}
+
+.pdf-canvas-viewport {
+  overflow: auto;
+  text-align: center;
+  scrollbar-color: #4b4e44 transparent;
+}
+
+.pdf-pages {
+  display: flex;
+  width: max-content;
+  min-width: 100%;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.pdf-page-canvas {
+  display: block;
+  flex: 0 0 auto;
+  border-radius: 3px;
+  background: white;
+  box-shadow: 0 12px 35px rgb(0 0 0 / 30%);
+}
+
+.pdf-print-frame {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  left: -10000px;
+  pointer-events: none;
+}
+
+.preview-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  height: 100%;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 8px;
+  color: #bbbdb5;
+}
+
+.preview-empty strong {
+  margin-top: 8px;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.preview-empty span {
+  color: #85887e;
+  font-size: 12px;
+}
+
+.loader {
+  width: 27px;
+  height: 27px;
+  border: 2px solid #505249;
+  border-top-color: #d9fa66;
+  border-radius: 50%;
+  animation: spin 900ms linear infinite;
+}
+
+.loader-error {
+  border-color: #ff7f6e;
+  animation: none;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes pulse {
+  to { opacity: 0.35; }
+}
+
+@media (max-width: 760px) {
+  html,
+  body,
+  #root {
+    overflow: auto;
+  }
+
+  .app-shell {
+    height: auto;
+    min-height: 100%;
+    grid-template-rows: auto 34px auto;
+  }
+
+  .topbar {
+    grid-template-columns: 1fr auto;
+    gap: 9px;
+    min-height: 46px;
+    padding: 6px 8px;
+  }
+
+  .document-title {
+    display: none;
+  }
+
+  .toolbar > button > span,
+  .toolbar > .button-link > span {
+    display: none;
+  }
+
+  .topbar button,
+  .button-link {
+    width: 30px;
+    padding: 0;
+    justify-content: center;
+  }
+
+  .workspace {
+    display: block;
+  }
+
+  .left-pane {
+    display: block;
+    border: 0;
+  }
+
+  .pane-resizer {
+    display: none;
+  }
+
+  .source-panel {
+    height: 60vh;
+  }
+
+  .output-panel {
+    height: 230px;
+    border-bottom: 1px solid #30322b;
+  }
+
+  .preview-panel {
+    height: 75vh;
+  }
+
+  .preview-surface {
+    padding: 4px;
+  }
+
+  .preview-title {
+    display: none;
+  }
+
+  .pdf-toolbar-separator {
+    margin: 0 1px;
+  }
+}
