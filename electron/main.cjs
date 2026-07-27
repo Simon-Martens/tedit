@@ -3,10 +3,14 @@ const { execFile } = require('node:child_process')
 const fs = require('node:fs/promises')
 const path = require('node:path')
 const { promisify } = require('node:util')
+const { TinymistService } = require('./tinymist-service.cjs')
 
 const isDevelopment = Boolean(process.env.VITE_DEV_SERVER_URL)
 const execFileAsync = promisify(execFile)
 const allowedDocumentPaths = new Set()
+const tinymist = new TinymistService((channel, payload) => {
+  for (const window of BrowserWindow.getAllWindows()) window.webContents.send(channel, payload)
+})
 
 // PDFium text rendering is unreliable with Electron's Vulkan path on Wayland.
 if (process.platform === 'linux') app.commandLine.appendSwitch('disable-features', 'Vulkan')
@@ -127,6 +131,18 @@ ipcMain.handle('document:save', async (_event, request) => {
   }
 })
 
+ipcMain.handle('tinymist:start', async (_event, request) => {
+  const filePath = path.resolve(request.filePath)
+  if (!allowedDocumentPaths.has(filePath)) {
+    throw new Error('Tinymist can only inspect a document opened by Typst Edit.')
+  }
+  void tinymist.start({ ...request, filePath })
+})
+
+ipcMain.on('tinymist:update', (_event, request) => tinymist.update(request))
+ipcMain.on('tinymist:locate', (_event, request) => tinymist.locate(request))
+ipcMain.on('tinymist:stop', () => void tinymist.stop())
+
 if (!app.requestSingleInstanceLock()) {
   app.quit()
 } else {
@@ -149,5 +165,6 @@ if (!app.requestSingleInstanceLock()) {
 }
 
 app.on('window-all-closed', () => {
+  void tinymist.stop()
   if (process.platform !== 'darwin') app.quit()
 })

@@ -29,6 +29,40 @@ export interface DesktopApi {
     name: string
     content: string
   }): Promise<DesktopFileMetadata | null>
+  startSourceSync(request: { documentId: string; filePath: string; source: string }): Promise<void>
+  updateSourceSync(request: { documentId: string; source: string }): void
+  locateSource(request: { documentId: string; requestId: number; line: number; character: number }): void
+  stopSourceSync(): void
+  onSourceJump(listener: (jump: SourceJump) => void): () => void
+  onSourceSyncStatus(listener: (status: SourceSyncStatus) => void): () => void
+}
+
+export interface PreviewPosition {
+  page: number
+  x: number
+  y: number
+}
+
+export interface SourcePosition {
+  line: number
+  character: number
+}
+
+export interface SourceCursorLocation {
+  cursor: SourcePosition
+  lookup: SourcePosition
+}
+
+export interface SourceJump {
+  documentId: string
+  requestId: number
+  positions: PreviewPosition[]
+}
+
+export interface SourceSyncStatus {
+  documentId: string
+  state: 'disabled' | 'installing' | 'starting' | 'ready' | 'error'
+  message: string
 }
 
 export interface EditorDocument {

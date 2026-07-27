@@ -5,7 +5,7 @@ import {
   type KeyboardEvent,
   type PointerEvent,
 } from 'react'
-import type { EditorDocument } from '../types'
+import type { EditorDocument, PreviewPosition, SourceCursorLocation, SourceSyncStatus } from '../types'
 import { CompilationPane } from './CompilationPane'
 import { PdfPreview } from './PdfPreview'
 import { SourcePane } from './SourcePane'
@@ -18,10 +18,18 @@ export function Workspace({
   document,
   onSourceChange,
   vimEnabled,
+  previewPositions,
+  sourceCursorLocation,
+  sourceSyncStatus,
+  onCursorPositionChange,
 }: {
   document: EditorDocument
   onSourceChange(value: string): void
   vimEnabled: boolean
+  previewPositions: PreviewPosition[]
+  sourceCursorLocation?: SourceCursorLocation
+  sourceSyncStatus: SourceSyncStatus
+  onCursorPositionChange(location: SourceCursorLocation): void
 }) {
   const [leftPanePercent, setLeftPanePercent] = useState(50)
   const [sourcePanePercent, setSourcePanePercent] = useState(67)
@@ -83,6 +91,7 @@ export function Workspace({
           onChange={onSourceChange}
           layoutVersion={layoutVersion}
           vimEnabled={vimEnabled}
+          onCursorPositionChange={onCursorPositionChange}
         />
         {outputExpanded ? (
           <div
@@ -124,7 +133,13 @@ export function Workspace({
         }}
         onPointerMove={resizeColumns}
       />
-      <PdfPreview document={document} key={document.id} />
+      <PdfPreview
+        document={document}
+        positions={previewPositions}
+        sourceCursorLocation={sourceCursorLocation}
+        sourceSyncStatus={sourceSyncStatus}
+        key={document.id}
+      />
     </section>
   )
 }

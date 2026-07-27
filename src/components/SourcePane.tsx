@@ -2,22 +2,58 @@ import { useEffect, useRef } from 'react'
 import Editor, { type OnMount } from '@monaco-editor/react'
 import { initVimMode, type VimAdapterInstance } from 'monaco-vim'
 import { configureTypstLanguage } from '../lib/typstLanguage'
-import type { EditorDocument } from '../types'
+import type { EditorDocument, SourceCursorLocation } from '../types'
+
+function findRenderableOffset(text: string, preferredOffset: number) {
+  for (const link of text.matchAll(/#link\s*\([^)]*\)\s*\[([^\]]*)\]/g)) {
+    const start = link.index ?? 0
+    const end = start + link[0].length
+    if (preferredOffset < start || preferredOffset > end) continue
+    const bodyOffset = link[0].lastIndexOf(link[1])
+    const bodyStart = start + bodyOffset
+    const bodyCharacters = [...link[1].matchAll(/[\p{L}\p{N}]/gu)]
+    if (bodyCharacters.length) {
+      const bodyCharacter = bodyCharacters.reduce((closest, candidate) => (
+        Math.abs(bodyStart + (candidate.index ?? 0) - preferredOffset)
+          < Math.abs(bodyStart + (closest.index ?? 0) - preferredOffset)
+          ? candidate
+          : closest
+      ))
+      return new TextEncoder().encode(text.slice(0, bodyStart + (bodyCharacter.index ?? 0))).length
+    }
+  }
+
+  const characters = [...text.matchAll(/[\p{L}\p{N}]/gu)]
+  const candidates = characters.length ? characters : [...text.matchAll(/[^\s#=*_`$\[\]{}()]/gu)]
+  if (!candidates.length) return undefined
+  const nearest = candidates.reduce((closest, candidate) => (
+    Math.abs((candidate.index ?? 0) - preferredOffset) < Math.abs((closest.index ?? 0) - preferredOffset)
+      ? candidate
+      : closest
+  ))
+  return new TextEncoder().encode(text.slice(0, nearest.index)).length
+}
 
 export function SourcePane({
   document,
   onChange,
   layoutVersion,
   vimEnabled,
+  onCursorPositionChange,
 }: {
   document: EditorDocument
   onChange(value: string): void
   layoutVersion: number
   vimEnabled: boolean
+  onCursorPositionChange(location: SourceCursorLocation): void
 }) {
   const editorRef = useRef<Parameters<OnMount>[0] | null>(null)
   const vimStatusRef = useRef<HTMLDivElement>(null)
   const vimAdapterRef = useRef<VimAdapterInstance | null>(null)
+  const cursorListenerRef = useRef<{ dispose(): void } | null>(null)
+  const mouseListenerRef = useRef<{ dispose(): void } | null>(null)
+  const cursorCallbackRef = useRef(onCursorPositionChange)
+  cursorCallbackRef.current = onCursorPositionChange
 
   const initializeVim = (editor: Parameters<OnMount>[0]) => {
     vimAdapterRef.current?.dispose()
@@ -41,7 +77,11 @@ export function SourcePane({
   }, [vimEnabled])
 
   useEffect(() => {
-    return () => vimAdapterRef.current?.dispose()
+    return () => {
+      vimAdapterRef.current?.dispose()
+      cursorListenerRef.current?.dispose()
+      mouseListenerRef.current?.dispose()
+    }
   }, [])
 
   return (
@@ -56,6 +96,47 @@ export function SourcePane({
             editorRef.current = editor
             editor.layout()
             if (vimEnabled) initializeVim(editor)
+            cursorListenerRef.current?.dispose()
+            mouseListenerRef.current?.dispose()
+            const reportPosition = (position: { lineNumber: number; column: number }) => {
+              const model = editor.getModel()
+              if (!model) return
+              const currentLine = position.lineNumber
+              for (let distance = 0; distance < model.getLineCount(); distance += 1) {
+                const lineNumbers = distance === 0
+                  ? [currentLine]
+                  : [currentLine - distance, currentLine + distance]
+                for (const lineNumber of lineNumbers) {
+                  if (lineNumber < 1 || lineNumber > model.getLineCount()) continue
+                  const text = model.getLineContent(lineNumber)
+                  const preferredOffset = lineNumber === currentLine
+                    ? Math.max(0, position.column - 2)
+                    : text.length / 2
+                  const character = findRenderableOffset(text, preferredOffset)
+                  if (character === undefined) continue
+                  const cursorText = model.getLineContent(currentLine)
+                  cursorCallbackRef.current({
+                    cursor: {
+                      line: currentLine - 1,
+                      character: new TextEncoder().encode(cursorText.slice(0, position.column - 1)).length,
+                    },
+                    lookup: { line: lineNumber - 1, character },
+                  })
+                  return
+                }
+              }
+            }
+            cursorListenerRef.current = editor.onDidChangeCursorPosition(({ position }) => reportPosition(position))
+            mouseListenerRef.current = editor.onMouseDown(({ target }) => {
+              const clickedPosition = target.position
+              const currentPosition = editor.getPosition()
+              if (
+                clickedPosition
+                && currentPosition
+                && clickedPosition.lineNumber === currentPosition.lineNumber
+                && clickedPosition.column === currentPosition.column
+              ) reportPosition(clickedPosition)
+            })
           }}
           beforeMount={configureTypstLanguage}
           language="typst"

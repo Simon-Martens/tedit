@@ -650,6 +650,27 @@ a:focus-visible {
   animation: spin 700ms linear infinite;
 }
 
+.source-sync-indicator {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #62655b;
+}
+
+.source-sync-indicator.installing,
+.source-sync-indicator.starting {
+  background: #e6b85c;
+  animation: pulse 800ms infinite alternate;
+}
+
+.source-sync-indicator.ready {
+  background: #9fc54c;
+}
+
+.source-sync-indicator.error {
+  background: #ff7f6e;
+}
+
 .preview-surface {
   position: relative;
   min-height: 0;
@@ -759,12 +780,28 @@ a:focus-visible {
 }
 
 .pdf-pages {
+  position: relative;
+  width: max-content;
+  min-width: 100%;
+}
+
+.pdf-page-stack {
   display: flex;
   width: max-content;
   min-width: 100%;
   flex-direction: column;
   align-items: center;
   gap: 12px;
+}
+
+.pdf-page-row {
+  display: grid;
+  width: max-content;
+  grid-template-columns: 18px auto;
+}
+
+.pdf-page-gutter {
+  width: 18px;
 }
 
 .pdf-page-canvas {
@@ -774,6 +811,34 @@ a:focus-visible {
   background: white;
   box-shadow: 0 12px 35px rgb(0 0 0 / 30%);
 }
+
+.pdf-location-marker {
+  position: absolute;
+  z-index: 4;
+  display: grid;
+  width: 16px;
+  height: 16px;
+  place-items: center;
+  opacity: 0;
+  color: #ff3658;
+  filter:
+    drop-shadow(0.5px 1px 1px hsl(347deg 55% 20% / 35%))
+    drop-shadow(1px 2px 2px hsl(347deg 55% 20% / 18%));
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+  transition: top 100ms ease-out, left 100ms ease-out;
+}
+
+.pdf-location-marker svg {
+  width: 16px;
+  height: 16px;
+  fill: currentColor;
+}
+
+.pdf-location-marker.visible {
+  opacity: 1;
+}
+
 
 .pdf-print-frame {
   position: absolute;
@@ -827,6 +892,7 @@ a:focus-visible {
 @keyframes pulse {
   to { opacity: 0.35; }
 }
+
 
 @media (max-width: 760px) {
   html,

@@ -3,6 +3,7 @@ import { TabBar } from './components/TabBar'
 import { Toolbar } from './components/Toolbar'
 import { Workspace } from './components/Workspace'
 import { useTypstCompilation } from './hooks/useTypstCompilation'
+import { useSourcePreviewSync } from './hooks/useSourcePreviewSync'
 import { createDocument, createPdfFilename, formatError } from './lib/documents'
 import type { EditorDocument, WritableFileHandle } from './types'
 
@@ -23,6 +24,7 @@ function App() {
   }
 
   useTypstCompilation(activeDocument, updateDocument)
+  const sourcePreviewSync = useSourcePreviewSync(activeDocument)
 
   useEffect(() => {
     localStorage.setItem('typst-edit.vim-mode', String(vimEnabled))
@@ -222,6 +224,10 @@ function App() {
           isDirty: true,
         })}
         vimEnabled={vimEnabled}
+        previewPositions={sourcePreviewSync.positions}
+        sourceCursorLocation={sourcePreviewSync.sourceCursorLocation}
+        sourceSyncStatus={sourcePreviewSync.status}
+        onCursorPositionChange={sourcePreviewSync.locate}
       />
     </main>
   )
