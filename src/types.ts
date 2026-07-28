@@ -56,6 +56,20 @@ export interface DesktopApi {
   saveSession(session: { filePaths: string[]; activeFilePath?: string }): Promise<void>
   readClipboard(): string
   writeClipboard(text: string): void
+  startLanguageServer(request: {
+    documentId: string
+    filePath: string
+    source: string
+    version: number
+  }): Promise<void>
+  updateLanguageServer(request: { documentId: string; source: string; version: number }): void
+  stopLanguageServer(): void
+  onLanguageServerStatus(listener: (status: LanguageServerStatus) => void): () => void
+  onLanguageServerDiagnostics(listener: (update: {
+    documentId: string
+    version: number
+    diagnostics: LanguageServerDiagnostic[]
+  }) => void): () => void
 }
 
 export interface PreviewPosition {
@@ -86,6 +100,18 @@ export interface SourceSyncStatus {
   message: string
 }
 
+export interface LanguageServerStatus {
+  documentId: string
+  state: 'disabled' | 'installing' | 'starting' | 'ready' | 'error'
+  message: string
+}
+
+export interface LanguageServerDiagnostic {
+  range: { start: SourcePosition; end: SourcePosition }
+  severity?: number
+  message: string
+}
+
 export interface EditorDiagnostic {
   severity: 'error' | 'warning' | 'info'
   message: string
@@ -110,6 +136,7 @@ export interface EditorDocument {
   compileState: CompilationState
   messages: string[]
   diagnostics: EditorDiagnostic[]
+  languageServerDiagnostics?: EditorDiagnostic[]
   pdfUrl?: string
   compiledAt?: string
   compileDurationMs?: number

@@ -49,7 +49,6 @@ export function useTypstCompilation(
     const timeout = window.setTimeout(() => {
       updateRef.current(document.id, {
         compileState: 'compiling',
-        messages: ['Compiling document...'],
         diagnostics: [],
       })
 

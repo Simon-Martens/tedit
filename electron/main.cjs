@@ -4,6 +4,7 @@ const fs = require('node:fs/promises')
 const path = require('node:path')
 const { promisify } = require('node:util')
 const { TinymistService } = require('./tinymist-service.cjs')
+const { TinymistLspService } = require('./tinymist-lsp-service.cjs')
 
 app.setPath('userData', path.join(app.getPath('appData'), 'tedit'))
 
@@ -22,6 +23,9 @@ const sessionPath = path.join(app.getPath('cache'), 'tedit', 'session.json')
 let settingsWrite = Promise.resolve()
 let sessionWrite = Promise.resolve()
 const tinymist = new TinymistService((channel, payload) => {
+  for (const window of BrowserWindow.getAllWindows()) window.webContents.send(channel, payload)
+})
+const tinymistLsp = new TinymistLspService((channel, payload) => {
   for (const window of BrowserWindow.getAllWindows()) window.webContents.send(channel, payload)
 })
 
@@ -271,6 +275,16 @@ ipcMain.on('tinymist:update', (_event, request) => tinymist.update(request))
 ipcMain.on('tinymist:locate', (_event, request) => tinymist.locate(request))
 ipcMain.on('tinymist:stop', () => void tinymist.stop())
 
+ipcMain.handle('tinymist-lsp:start', async (_event, request) => {
+  const filePath = path.resolve(request.filePath)
+  if (!allowedDocumentPaths.has(filePath)) {
+    throw new Error('Tinymist can only inspect a document opened by tedit.')
+  }
+  void tinymistLsp.start({ ...request, filePath })
+})
+ipcMain.on('tinymist-lsp:update', (_event, request) => tinymistLsp.update(request))
+ipcMain.on('tinymist-lsp:stop', () => void tinymistLsp.stop())
+
 if (!app.requestSingleInstanceLock()) {
   app.quit()
 } else {
@@ -293,7 +307,7 @@ if (!app.requestSingleInstanceLock()) {
 }
 
 app.on('window-all-closed', () => {
-  void tinymist.stop().finally(() => {
+  void Promise.all([tinymist.stop(), tinymistLsp.stop()]).finally(() => {
     if (process.platform === 'linux') app.exit(0)
     else if (process.platform !== 'darwin') app.quit()
   })

@@ -1,4 +1,4 @@
-import type { EditorDocument } from '../types'
+import type { EditorDocument, LanguageServerStatus } from '../types'
 import { Icon } from './Icon'
 
 export function Footer({
@@ -7,12 +7,14 @@ export function Footer({
   column,
   compilationOpen,
   onToggleCompilation,
+  languageServerStatus,
 }: {
   document?: EditorDocument
   line: number
   column: number
   compilationOpen: boolean
   onToggleCompilation(): void
+  languageServerStatus: LanguageServerStatus
 }) {
   const state = document?.compileState ?? 'idle'
   const label = document
@@ -26,6 +28,14 @@ export function Footer({
         <span className="footer-separator" aria-hidden="true" />
         <span className="footer-repository" title={document?.repoName ?? 'No repository'}>
           {document?.repoName ?? 'No repository'}
+        </span>
+        <span className="footer-separator" aria-hidden="true" />
+        <span
+          className={`footer-tinymist footer-tinymist-${languageServerStatus.state}`}
+          title={languageServerStatus.message}
+        >
+          <i aria-hidden="true" />
+          Tinymist
         </span>
       </div>
       <div className="footer-compilation">

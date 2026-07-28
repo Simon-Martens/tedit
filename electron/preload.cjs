@@ -17,6 +17,19 @@ contextBridge.exposeInMainWorld('typstDesktop', {
     ipcRenderer.on('tinymist:status', handler)
     return () => ipcRenderer.removeListener('tinymist:status', handler)
   },
+  startLanguageServer: (request) => ipcRenderer.invoke('tinymist-lsp:start', request),
+  updateLanguageServer: (request) => ipcRenderer.send('tinymist-lsp:update', request),
+  stopLanguageServer: () => ipcRenderer.send('tinymist-lsp:stop'),
+  onLanguageServerStatus: (listener) => {
+    const handler = (_event, payload) => listener(payload)
+    ipcRenderer.on('tinymist-lsp:status', handler)
+    return () => ipcRenderer.removeListener('tinymist-lsp:status', handler)
+  },
+  onLanguageServerDiagnostics: (listener) => {
+    const handler = (_event, payload) => listener(payload)
+    ipcRenderer.on('tinymist-lsp:diagnostics', handler)
+    return () => ipcRenderer.removeListener('tinymist-lsp:diagnostics', handler)
+  },
   getSettings: () => ipcRenderer.invoke('settings:get'),
   updateSettings: (settings) => ipcRenderer.invoke('settings:update', settings),
   restoreSession: () => ipcRenderer.invoke('session:restore'),

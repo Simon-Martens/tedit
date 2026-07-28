@@ -121,7 +121,8 @@ export function SourcePane({
   const findActionRef = useRef<{ dispose(): void } | null>(null)
   const initiallyCollapsedModelsRef = useRef(new Set<string>())
   const foldingEnabledRef = useRef(foldingEnabled)
-  const diagnosticsRef = useRef(document.diagnostics)
+  const diagnostics = document.languageServerDiagnostics ?? document.diagnostics
+  const diagnosticsRef = useRef(diagnostics)
   const cursorCallbackRef = useRef(onCursorPositionChange)
   const cursorPositionCallbackRef = useRef(onCursorChange)
   const saveCallbackRef = useRef(onSave)
@@ -131,7 +132,7 @@ export function SourcePane({
   cursorPositionCallbackRef.current = onCursorChange
   saveCallbackRef.current = onSave
   foldingEnabledRef.current = foldingEnabled
-  diagnosticsRef.current = document.diagnostics
+  diagnosticsRef.current = diagnostics
 
   const initializeVim = (editor: Parameters<OnMount>[0]) => {
     vimAdapterRef.current?.dispose()
@@ -270,7 +271,7 @@ export function SourcePane({
 
   useEffect(() => {
     applyDiagnostics()
-  }, [document.diagnostics])
+  }, [diagnostics])
 
   useEffect(() => {
     const commands = VimMode.commands as typeof VimMode.commands & { save?: () => void }

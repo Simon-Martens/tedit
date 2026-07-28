@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { TabBar } from './components/TabBar'
 import { Toolbar } from './components/Toolbar'
 import { Workspace } from './components/Workspace'
@@ -6,6 +6,7 @@ import { Icon } from './components/Icon'
 import { Footer } from './components/Footer'
 import { useTypstCompilation } from './hooks/useTypstCompilation'
 import { useSourcePreviewSync } from './hooks/useSourcePreviewSync'
+import { useTinymistLanguageServer } from './hooks/useTinymistLanguageServer'
 import { createDocument, createPdfFilename, formatError } from './lib/documents'
 import type { EditorDocument, WritableFileHandle } from './types'
 
@@ -34,7 +35,10 @@ function App() {
   ))
   const [sessionRestored, setSessionRestored] = useState(() => !window.typstDesktop)
   const [cursorPosition, setCursorPosition] = useState({ line: 1, column: 1 })
-  const [compilationOpen, setCompilationOpen] = useState(false)
+  const [compilationView, setCompilationView] = useState<{
+    documentId: string
+    mode: 'closed' | 'manual' | 'error'
+  }>({ documentId: '', mode: 'closed' })
   const fileInputRef = useRef<HTMLInputElement>(null)
   const documentsRef = useRef(documents)
   documentsRef.current = documents
@@ -43,14 +47,27 @@ function App() {
   const sessionFilePaths = documents.flatMap(({ filePath }) => filePath ? [filePath] : [])
   const sessionKey = sessionFilePaths.join('\0')
   const activeFilePath = activeDocument?.filePath
+  const hasCurrentCompilationError = activeDocument?.compileState === 'error'
+    && activeDocument.attemptedRevision === activeDocument.sourceRevision
+  const compilationMode = compilationView.documentId === activeDocument?.id
+    ? compilationView.mode
+    : hasCurrentCompilationError ? 'error' : 'closed'
+  const compilationOpen = compilationMode !== 'closed'
 
   useEffect(() => {
     setCursorPosition({ line: 1, column: 1 })
   }, [activeDocument?.id])
 
-  useEffect(() => {
-    setCompilationOpen(activeDocument?.compileState === 'error')
-  }, [activeDocument?.id, activeDocument?.compileState === 'error'])
+  useLayoutEffect(() => {
+    const documentId = activeDocument?.id ?? ''
+    setCompilationView((current) => {
+      let mode = current.documentId === documentId ? current.mode : 'closed'
+      if (hasCurrentCompilationError) mode = 'error'
+      else if (!activeDocument || (activeDocument.compileState === 'success' && mode === 'error')) mode = 'closed'
+      if (current.documentId === documentId && current.mode === mode) return current
+      return { documentId, mode }
+    })
+  }, [activeDocument?.id, activeDocument?.compileState, hasCurrentCompilationError])
 
   const updateDocument = (id: string, update: Partial<EditorDocument>) => {
     setDocuments((current) => current.map((document) => (
@@ -59,6 +76,7 @@ function App() {
   }
 
   useTypstCompilation(activeDocument, updateDocument)
+  const languageServerStatus = useTinymistLanguageServer(activeDocument, updateDocument)
   const sourcePreviewSync = useSourcePreviewSync(
     activeDocument,
     showPreviewPosition || autoScrollEnabled,
@@ -177,7 +195,11 @@ function App() {
 
   const showDocumentError = (message: string) => {
     if (!activeDocument) return
-    updateDocument(activeId, { compileState: 'error', messages: [message] })
+    updateDocument(activeId, {
+      attemptedRevision: activeDocument.sourceRevision,
+      compileState: 'error',
+      messages: [message],
+    })
   }
 
   const loadBrowserFile = async (file: File, handle?: WritableFileHandle) => {
@@ -392,6 +414,7 @@ function App() {
           lightThemeEnabled={lightThemeEnabled}
           foldingEnabled={foldingEnabled}
           compilationOpen={compilationOpen}
+          compilationAutoSized={compilationMode === 'error'}
           onSave={() => void saveFile()}
         />
       ) : (
@@ -409,7 +432,11 @@ function App() {
         line={cursorPosition.line}
         column={cursorPosition.column}
         compilationOpen={compilationOpen}
-        onToggleCompilation={() => setCompilationOpen((current) => !current)}
+        onToggleCompilation={() => setCompilationView({
+          documentId: activeDocument?.id ?? '',
+          mode: compilationOpen ? 'closed' : 'manual',
+        })}
+        languageServerStatus={languageServerStatus}
       />
     </main>
   )

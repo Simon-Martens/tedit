@@ -28,6 +28,7 @@ export function Workspace({
   lightThemeEnabled,
   foldingEnabled,
   compilationOpen,
+  compilationAutoSized,
   onSave,
 }: {
   document: EditorDocument
@@ -43,6 +44,7 @@ export function Workspace({
   lightThemeEnabled: boolean
   foldingEnabled: boolean
   compilationOpen: boolean
+  compilationAutoSized: boolean
   onSave(): void
 }) {
   const [leftPanePercent, setLeftPanePercent] = useState(50)
@@ -90,7 +92,7 @@ export function Workspace({
         aria-label="Editor and compilation output"
         ref={leftPaneRef}
         className={`left-pane ${compilationOpen
-          ? document.compileState === 'error' ? 'output-error' : 'output-expanded'
+          ? compilationAutoSized ? 'output-error' : 'output-expanded'
           : 'output-hidden'}`}
         style={{
           '--source-pane-size': `${sourcePanePercent}%`,
@@ -109,7 +111,7 @@ export function Workspace({
         />
         {compilationOpen && (
           <>
-            {document.compileState === 'error' ? (
+            {compilationAutoSized ? (
               <div className="output-auto-divider" />
             ) : (
               <div

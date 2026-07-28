@@ -89,6 +89,34 @@ a:focus-visible {
   gap: 9px;
 }
 
+.footer-tinymist {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 5px;
+}
+
+.footer-tinymist i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #686b62;
+}
+
+.footer-tinymist-installing i,
+.footer-tinymist-starting i {
+  background: var(--color-compiling);
+  animation: pulse 700ms infinite alternate;
+}
+
+.footer-tinymist-ready i {
+  background: var(--color-success);
+}
+
+.footer-tinymist-error i {
+  background: var(--color-error);
+}
+
 .footer-separator {
   width: 1px;
   height: 11px;
