@@ -22,8 +22,12 @@ export function Workspace({
   sourceCursorLocation,
   sourceSyncStatus,
   onCursorPositionChange,
+  onCursorChange,
   showPreviewPosition,
   autoScrollEnabled,
+  lightThemeEnabled,
+  foldingEnabled,
+  compilationOpen,
 }: {
   document: EditorDocument
   onSourceChange(value: string): void
@@ -32,21 +36,20 @@ export function Workspace({
   sourceCursorLocation?: SourceCursorLocation
   sourceSyncStatus: SourceSyncStatus
   onCursorPositionChange(location: SourceCursorLocation): void
+  onCursorChange(line: number, column: number): void
   showPreviewPosition: boolean
   autoScrollEnabled: boolean
+  lightThemeEnabled: boolean
+  foldingEnabled: boolean
+  compilationOpen: boolean
 }) {
   const [leftPanePercent, setLeftPanePercent] = useState(50)
   const [sourcePanePercent, setSourcePanePercent] = useState(67)
-  const [outputExpanded, setOutputExpanded] = useState(false)
   const workspaceRef = useRef<HTMLElement>(null)
   const leftPaneRef = useRef<HTMLElement>(null)
-  const automaticOutputHeight = document.compileState === 'error'
-    ? Math.min(260, 56 + document.messages.length * 19)
-    : 31
   const layoutVersion = leftPanePercent
     + sourcePanePercent
-    + automaticOutputHeight
-    + (outputExpanded ? 1000 : 0)
+    + (compilationOpen ? 1000 : 0)
 
   const resizeColumns = (event: PointerEvent<HTMLDivElement>) => {
     if (!event.currentTarget.hasPointerCapture(event.pointerId)) return
@@ -84,10 +87,9 @@ export function Workspace({
       <section
         aria-label="Editor and compilation output"
         ref={leftPaneRef}
-        className={`left-pane ${outputExpanded ? 'output-expanded' : 'output-auto'}`}
+        className={`left-pane ${compilationOpen ? 'output-expanded' : 'output-hidden'}`}
         style={{
           '--source-pane-size': `${sourcePanePercent}%`,
-          '--output-pane-size': `${automaticOutputHeight}px`,
         } as CSSProperties}
       >
         <SourcePane
@@ -95,9 +97,13 @@ export function Workspace({
           onChange={onSourceChange}
           layoutVersion={layoutVersion}
           vimEnabled={vimEnabled}
+          lightThemeEnabled={lightThemeEnabled}
+          foldingEnabled={foldingEnabled}
           onCursorPositionChange={onCursorPositionChange}
+          onCursorChange={onCursorChange}
         />
-        {outputExpanded ? (
+        {compilationOpen && (
+          <>
           <div
             className="pane-resizer row-resizer"
             role="separator"
@@ -114,12 +120,9 @@ export function Workspace({
             }}
             onPointerMove={resizeRows}
           />
-        ) : <div className="output-auto-divider" />}
-        <CompilationPane
-          document={document}
-          expanded={outputExpanded}
-          onToggleExpanded={() => setOutputExpanded((current) => !current)}
-        />
+          <CompilationPane document={document} />
+          </>
+        )}
       </section>
       <div
         className="pane-resizer column-resizer"

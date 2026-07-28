@@ -3,6 +3,7 @@ import { TabBar } from './components/TabBar'
 import { Toolbar } from './components/Toolbar'
 import { Workspace } from './components/Workspace'
 import { Icon } from './components/Icon'
+import { Footer } from './components/Footer'
 import { useTypstCompilation } from './hooks/useTypstCompilation'
 import { useSourcePreviewSync } from './hooks/useSourcePreviewSync'
 import { createDocument, createPdfFilename, formatError } from './lib/documents'
@@ -25,7 +26,15 @@ function App() {
   const [autoScrollEnabled, setAutoScrollEnabled] = useState(() => (
     window.typstDesktop ? true : browserSetting('tedit.autoscroll', true)
   ))
+  const [lightThemeEnabled, setLightThemeEnabled] = useState(() => (
+    window.typstDesktop ? false : browserSetting('tedit.light-theme', false)
+  ))
+  const [foldingEnabled, setFoldingEnabled] = useState(() => (
+    window.typstDesktop ? true : browserSetting('tedit.code-folding', true)
+  ))
   const [sessionRestored, setSessionRestored] = useState(() => !window.typstDesktop)
+  const [cursorPosition, setCursorPosition] = useState({ line: 1, column: 1 })
+  const [compilationOpen, setCompilationOpen] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const documentsRef = useRef(documents)
   documentsRef.current = documents
@@ -35,6 +44,14 @@ function App() {
   const sessionKey = sessionFilePaths.join('\0')
   const activeFilePath = activeDocument?.filePath
 
+  useEffect(() => {
+    setCursorPosition({ line: 1, column: 1 })
+  }, [activeDocument?.id])
+
+  useEffect(() => {
+    setCompilationOpen(activeDocument?.compileState === 'error')
+  }, [activeDocument?.id, activeDocument?.compileState === 'error'])
+
   const updateDocument = (id: string, update: Partial<EditorDocument>) => {
     setDocuments((current) => current.map((document) => (
       document.id === id ? { ...document, ...update } : document
@@ -42,7 +59,10 @@ function App() {
   }
 
   useTypstCompilation(activeDocument, updateDocument)
-  const sourcePreviewSync = useSourcePreviewSync(activeDocument)
+  const sourcePreviewSync = useSourcePreviewSync(
+    activeDocument,
+    showPreviewPosition || autoScrollEnabled,
+  )
 
   useEffect(() => {
     if (window.typstDesktop) return
@@ -60,10 +80,22 @@ function App() {
   }, [autoScrollEnabled])
 
   useEffect(() => {
+    if (window.typstDesktop) return
+    localStorage.setItem('tedit.light-theme', String(lightThemeEnabled))
+  }, [lightThemeEnabled])
+
+  useEffect(() => {
+    if (window.typstDesktop) return
+    localStorage.setItem('tedit.code-folding', String(foldingEnabled))
+  }, [foldingEnabled])
+
+  useEffect(() => {
     window.typstDesktop?.getSettings().then((settings) => {
       setVimEnabled(settings.vimEnabled)
       setShowPreviewPosition(settings.showPreviewPosition)
       setAutoScrollEnabled(settings.autoScrollEnabled)
+      setLightThemeEnabled(settings.lightThemeEnabled)
+      setFoldingEnabled(settings.foldingEnabled)
     }).catch(() => undefined)
   }, [])
 
@@ -118,6 +150,16 @@ function App() {
   const changeAutoScrollEnabled = (enabled: boolean) => {
     setAutoScrollEnabled(enabled)
     void window.typstDesktop?.updateSettings({ autoScrollEnabled: enabled }).catch(() => undefined)
+  }
+
+  const changeLightThemeEnabled = (enabled: boolean) => {
+    setLightThemeEnabled(enabled)
+    void window.typstDesktop?.updateSettings({ lightThemeEnabled: enabled }).catch(() => undefined)
+  }
+
+  const changeFoldingEnabled = (enabled: boolean) => {
+    setFoldingEnabled(enabled)
+    void window.typstDesktop?.updateSettings({ foldingEnabled: enabled }).catch(() => undefined)
   }
 
   useEffect(() => {
@@ -295,7 +337,7 @@ function App() {
   })
 
   return (
-    <main className="app-shell">
+    <main className={`app-shell ${lightThemeEnabled ? 'theme-light' : ''}`}>
       <input
         ref={fileInputRef}
         type="file"
@@ -318,6 +360,10 @@ function App() {
         onShowPreviewPositionChange={changeShowPreviewPosition}
         autoScrollEnabled={autoScrollEnabled}
         onAutoScrollEnabledChange={changeAutoScrollEnabled}
+        lightThemeEnabled={lightThemeEnabled}
+        onLightThemeEnabledChange={changeLightThemeEnabled}
+        foldingEnabled={foldingEnabled}
+        onFoldingEnabledChange={changeFoldingEnabled}
       />
       <TabBar
         documents={documents}
@@ -340,8 +386,12 @@ function App() {
           sourceCursorLocation={sourcePreviewSync.sourceCursorLocation}
           sourceSyncStatus={sourcePreviewSync.status}
           onCursorPositionChange={sourcePreviewSync.locate}
+          onCursorChange={(line, column) => setCursorPosition({ line, column })}
           showPreviewPosition={showPreviewPosition}
           autoScrollEnabled={autoScrollEnabled}
+          lightThemeEnabled={lightThemeEnabled}
+          foldingEnabled={foldingEnabled}
+          compilationOpen={compilationOpen}
         />
       ) : (
         <section className="workspace-empty">
@@ -353,6 +403,13 @@ function App() {
           </button>
         </section>
       )}
+      <Footer
+        document={activeDocument}
+        line={cursorPosition.line}
+        column={cursorPosition.column}
+        compilationOpen={compilationOpen}
+        onToggleCompilation={() => setCompilationOpen((current) => !current)}
+      />
     </main>
   )
 }

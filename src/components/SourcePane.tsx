@@ -1,7 +1,7 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Editor, { type OnMount } from '@monaco-editor/react'
 import { initVimMode, type VimAdapterInstance } from 'monaco-vim'
-import { configureTypstLanguage } from '../lib/typstLanguage'
+import { configureTypstLanguage, getTypstFoldingRanges } from '../lib/typstLanguage'
 import type { EditorDocument, SourceCursorLocation } from '../types'
 import { Icon } from './Icon'
 
@@ -40,22 +40,40 @@ export function SourcePane({
   onChange,
   layoutVersion,
   vimEnabled,
+  lightThemeEnabled,
+  foldingEnabled,
   onCursorPositionChange,
+  onCursorChange,
 }: {
   document: EditorDocument
   onChange(value: string): void
   layoutVersion: number
   vimEnabled: boolean
+  lightThemeEnabled: boolean
+  foldingEnabled: boolean
   onCursorPositionChange(location: SourceCursorLocation): void
+  onCursorChange(line: number, column: number): void
 }) {
   const editorRef = useRef<Parameters<OnMount>[0] | null>(null)
+  const monacoRef = useRef<Parameters<OnMount>[1] | null>(null)
   const vimStatusRef = useRef<HTMLDivElement>(null)
   const vimAdapterRef = useRef<VimAdapterInstance | null>(null)
   const cursorListenerRef = useRef<{ dispose(): void } | null>(null)
   const mouseListenerRef = useRef<{ dispose(): void } | null>(null)
+  const modelListenerRef = useRef<{ dispose(): void } | null>(null)
+  const historyListenerRef = useRef<{ dispose(): void } | null>(null)
   const findActionRef = useRef<{ dispose(): void } | null>(null)
+  const initiallyCollapsedModelsRef = useRef(new Set<string>())
+  const foldingEnabledRef = useRef(foldingEnabled)
+  const diagnosticsRef = useRef(document.diagnostics)
   const cursorCallbackRef = useRef(onCursorPositionChange)
+  const cursorPositionCallbackRef = useRef(onCursorChange)
+  const [canUndo, setCanUndo] = useState(false)
+  const [canRedo, setCanRedo] = useState(false)
   cursorCallbackRef.current = onCursorPositionChange
+  cursorPositionCallbackRef.current = onCursorChange
+  foldingEnabledRef.current = foldingEnabled
+  diagnosticsRef.current = document.diagnostics
 
   const initializeVim = (editor: Parameters<OnMount>[0]) => {
     vimAdapterRef.current?.dispose()
@@ -76,6 +94,90 @@ export function SourcePane({
     void editor.getAction('editor.action.startFindReplaceAction')?.run()
   }
 
+  const updateHistoryAvailability = (editor = editorRef.current) => {
+    const model = editor?.getModel()
+    setCanUndo(model?.canUndo() ?? false)
+    setCanRedo(model?.canRedo() ?? false)
+  }
+
+  const undo = () => {
+    const editor = editorRef.current
+    if (!editor) return
+    editor.focus()
+    editor.trigger('tedit', 'undo', null)
+  }
+
+  const redo = () => {
+    const editor = editorRef.current
+    if (!editor) return
+    editor.focus()
+    editor.trigger('tedit', 'redo', null)
+  }
+
+  const setOutermostCollapsed = async (
+    editor: Parameters<OnMount>[0],
+    collapsed: boolean,
+    expandNested = false,
+  ) => {
+    const model = editor.getModel()
+    if (!model) return
+    const ranges = getTypstFoldingRanges(model)
+    const outermostLines = ranges.filter((range, index) => !ranges.some((candidate, candidateIndex) => (
+      candidateIndex !== index
+      && candidate.start <= range.start
+      && candidate.end >= range.end
+      && (candidate.start < range.start || candidate.end > range.end)
+    ))).map(({ start }) => start - 1)
+    if (!outermostLines.length) return
+    if (expandNested) await editor.getAction('editor.unfoldAll')?.run()
+    const action = editor.getAction(collapsed ? 'editor.fold' : 'editor.unfold')
+    await action?.run({ levels: 1, selectionLines: outermostLines })
+  }
+
+  const collapseOutermost = () => {
+    const editor = editorRef.current
+    if (editor) void setOutermostCollapsed(editor, true, true)
+  }
+
+  const expandOutermost = () => {
+    const editor = editorRef.current
+    if (editor) void setOutermostCollapsed(editor, false)
+  }
+
+  const applyDiagnostics = (editor = editorRef.current) => {
+    const monaco = monacoRef.current
+    const model = editor?.getModel()
+    if (!monaco || !model) return
+    monaco.editor.setModelMarkers(model, 'typst', diagnosticsRef.current.map((diagnostic) => {
+      const startLineNumber = Math.min(model.getLineCount(), Math.max(1, diagnostic.startLineNumber))
+      const endLineNumber = Math.min(model.getLineCount(), Math.max(startLineNumber, diagnostic.endLineNumber))
+      const startColumn = Math.min(
+        model.getLineMaxColumn(startLineNumber),
+        Math.max(1, diagnostic.startColumn),
+      )
+      let endColumn = Math.min(
+        model.getLineMaxColumn(endLineNumber),
+        Math.max(1, diagnostic.endColumn),
+      )
+      if (startLineNumber === endLineNumber && endColumn <= startColumn) {
+        endColumn = Math.min(model.getLineMaxColumn(endLineNumber), startColumn + 1)
+      }
+      return {
+        severity: diagnostic.severity === 'error'
+          ? monaco.MarkerSeverity.Error
+          : diagnostic.severity === 'warning'
+            ? monaco.MarkerSeverity.Warning
+            : monaco.MarkerSeverity.Info,
+        message: diagnostic.message,
+        source: 'Typst',
+        startLineNumber,
+        startColumn,
+        endLineNumber,
+        endColumn,
+      }
+    }))
+  }
+
   useEffect(() => {
     const frame = requestAnimationFrame(() => editorRef.current?.layout())
     return () => cancelAnimationFrame(frame)
@@ -93,11 +195,34 @@ export function SourcePane({
   }, [vimEnabled])
 
   useEffect(() => {
+    const editor = editorRef.current
+    if (!editor) return
+    if (!foldingEnabled) {
+      void editor.getAction('editor.unfoldAll')?.run().finally(() => {
+        editor.updateOptions({ folding: false, showFoldingControls: 'never' })
+      })
+      return
+    }
+    editor.updateOptions({ folding: true, showFoldingControls: 'always' })
+    const modelId = editor.getModel()?.uri.toString()
+    if (modelId) initiallyCollapsedModelsRef.current.add(modelId)
+    collapseOutermost()
+  }, [foldingEnabled])
+
+  useEffect(() => {
+    applyDiagnostics()
+  }, [document.diagnostics])
+
+  useEffect(() => {
     return () => {
       vimAdapterRef.current?.dispose()
       cursorListenerRef.current?.dispose()
       mouseListenerRef.current?.dispose()
+      modelListenerRef.current?.dispose()
+      historyListenerRef.current?.dispose()
       findActionRef.current?.dispose()
+      const model = editorRef.current?.getModel()
+      if (model) monacoRef.current?.editor.setModelMarkers(model, 'typst', [])
     }
   }, [])
 
@@ -105,8 +230,50 @@ export function SourcePane({
     <div className={vimEnabled ? 'source-panel vim-enabled' : 'source-panel'}>
       <div className="panel-heading source-heading">
         <span className="source-title">Source</span>
-        <span className="source-actions">
-          <span className="panel-meta">Typst</span>
+          <span className="source-actions">
+            <span className="panel-meta">Typst</span>
+            <button
+              type="button"
+              className="source-search"
+              title="Undo (Ctrl/Cmd+Z)"
+              aria-label="Undo source edit"
+              disabled={!canUndo}
+              onClick={undo}
+            >
+              <Icon name="undo" />
+            </button>
+            <button
+              type="button"
+              className="source-search"
+              title="Redo (Ctrl/Cmd+Shift+Z)"
+              aria-label="Redo source edit"
+              disabled={!canRedo}
+              onClick={redo}
+            >
+              <Icon name="redo" />
+            </button>
+            {foldingEnabled && (
+            <>
+              <button
+                type="button"
+                className="source-search"
+                title="Collapse top-level blocks"
+                aria-label="Collapse top-level blocks"
+                onClick={collapseOutermost}
+              >
+                <Icon name="minus" />
+              </button>
+              <button
+                type="button"
+                className="source-search"
+                title="Expand top-level blocks"
+                aria-label="Expand top-level blocks"
+                onClick={expandOutermost}
+              >
+                <Icon name="plus" />
+              </button>
+            </>
+          )}
           <button
             type="button"
             className="source-search"
@@ -131,6 +298,7 @@ export function SourcePane({
         <Editor
           onMount={(editor, monaco) => {
             editorRef.current = editor
+            monacoRef.current = monaco
             findActionRef.current?.dispose()
             findActionRef.current = editor.addAction({
               id: 'tedit.find',
@@ -138,13 +306,37 @@ export function SourcePane({
               keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyF],
               run: () => editor.getAction('actions.find')?.run(),
             })
+            const collapseInitialModel = () => {
+              const model = editor.getModel()
+              const modelId = model?.uri.toString()
+              if (
+                !foldingEnabledRef.current
+                || !model
+                || !modelId
+                || initiallyCollapsedModelsRef.current.has(modelId)
+              ) return
+              initiallyCollapsedModelsRef.current.add(modelId)
+              void setOutermostCollapsed(editor, true, true)
+            }
+            modelListenerRef.current?.dispose()
+            modelListenerRef.current = editor.onDidChangeModel(() => {
+              collapseInitialModel()
+              applyDiagnostics(editor)
+              updateHistoryAvailability(editor)
+            })
+            historyListenerRef.current?.dispose()
+            historyListenerRef.current = editor.onDidChangeModelContent(() => updateHistoryAvailability(editor))
             editor.layout()
             if (vimEnabled) initializeVim(editor)
             cursorListenerRef.current?.dispose()
             mouseListenerRef.current?.dispose()
+            collapseInitialModel()
+            applyDiagnostics(editor)
+            updateHistoryAvailability(editor)
             const reportPosition = (position: { lineNumber: number; column: number }) => {
               const model = editor.getModel()
               if (!model) return
+              cursorPositionCallbackRef.current(position.lineNumber, position.column)
               const currentLine = position.lineNumber
               for (let distance = 0; distance < model.getLineCount(); distance += 1) {
                 const lineNumbers = distance === 0
@@ -181,13 +373,15 @@ export function SourcePane({
                 && clickedPosition.column === currentPosition.column
               ) reportPosition(clickedPosition)
             })
+            const initialPosition = editor.getPosition()
+            if (initialPosition) reportPosition(initialPosition)
           }}
           beforeMount={configureTypstLanguage}
           language="typst"
           path={`tedit://${document.id}.typ`}
-          value={document.source}
+          defaultValue={document.source}
           onChange={(value) => onChange(value ?? '')}
-          theme="vs-dark"
+          theme={lightThemeEnabled ? 'vs' : 'vs-dark'}
           loading={<div className="editor-loading">Loading Monaco editor...</div>}
           options={{
             automaticLayout: true,
@@ -198,11 +392,19 @@ export function SourcePane({
             fontSize: 14,
             lineHeight: 22,
             padding: { top: 14, bottom: 14 },
+            folding: foldingEnabled,
+            showFoldingControls: foldingEnabled ? 'always' : 'never',
             scrollBeyondLastLine: false,
             smoothScrolling: true,
-            renderLineHighlight: 'gutter',
+            renderLineHighlight: 'none',
             overviewRulerBorder: false,
-            scrollbar: { verticalScrollbarSize: 10, horizontalScrollbarSize: 10 },
+            scrollbar: {
+              vertical: 'visible',
+              horizontal: 'visible',
+              verticalScrollbarSize: 10,
+              horizontalScrollbarSize: 10,
+              useShadows: false,
+            },
           }}
         />
       </div>

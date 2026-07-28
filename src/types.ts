@@ -28,6 +28,8 @@ export interface AppSettings {
   vimEnabled: boolean
   showPreviewPosition: boolean
   autoScrollEnabled: boolean
+  lightThemeEnabled: boolean
+  foldingEnabled: boolean
 }
 
 export interface DesktopSession {
@@ -82,6 +84,15 @@ export interface SourceSyncStatus {
   message: string
 }
 
+export interface EditorDiagnostic {
+  severity: 'error' | 'warning' | 'info'
+  message: string
+  startLineNumber: number
+  startColumn: number
+  endLineNumber: number
+  endColumn: number
+}
+
 export interface EditorDocument {
   id: string
   fileName: string
@@ -96,6 +107,7 @@ export interface EditorDocument {
   fallbackUuid: string
   compileState: CompilationState
   messages: string[]
+  diagnostics: EditorDiagnostic[]
   pdfUrl?: string
   compiledAt?: string
   compileDurationMs?: number

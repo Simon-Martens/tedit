@@ -1,0 +1,208 @@
+@import '../../node_modules/monaco-editor/esm/vs/base/browser/ui/codicons/codicon/codicon.css';
+
+.source-panel {
+  grid-template-rows: var(--panel-heading-height) minmax(0, 1fr);
+}
+
+.source-panel.vim-enabled {
+  grid-template-rows: var(--panel-heading-height) minmax(0, 1fr) 24px;
+}
+
+.source-heading {
+  padding-right: 4px;
+  background: #1a1b17;
+}
+
+.source-title {
+  display: flex;
+  height: 100%;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 7px;
+  line-height: 1;
+}
+
+.source-actions {
+  display: flex;
+  height: 100%;
+  align-items: center;
+  gap: 7px;
+}
+
+.source-search {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  place-items: center;
+  border: 0;
+  border-radius: 4px;
+  color: #92958b;
+  background: transparent;
+  cursor: pointer;
+}
+
+.source-search:hover {
+  color: #eff0eb;
+  background: #2c2e27;
+}
+
+.source-search:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.source-search:disabled:hover {
+  color: #92958b;
+  background: transparent;
+}
+
+.source-search svg {
+  width: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.7;
+}
+
+.editor-wrap {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: #1e1e1e;
+}
+
+.editor-wrap > section {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.editor-wrap .monaco-scrollable-element > .scrollbar {
+  background: var(--color-scrollbar-track) !important;
+}
+
+.editor-wrap .monaco-scrollable-element > .scrollbar.vertical {
+  width: var(--scrollbar-size) !important;
+}
+
+.editor-wrap .monaco-scrollable-element > .scrollbar.horizontal {
+  height: var(--scrollbar-size) !important;
+}
+
+.editor-wrap .monaco-scrollable-element > .scrollbar > .slider {
+  border-radius: 0;
+  background: var(--color-scrollbar-thumb) !important;
+}
+
+.editor-wrap .monaco-scrollable-element > .scrollbar:hover > .slider,
+.editor-wrap .monaco-scrollable-element > .scrollbar > .slider:hover,
+.editor-wrap .monaco-scrollable-element > .scrollbar > .slider.active {
+  background: var(--color-scrollbar-thumb-hover) !important;
+}
+
+.editor-wrap .monaco-editor .line-numbers.active-line-number {
+  color: var(--color-accent) !important;
+}
+
+/* Monaco creates these outside the editor tree in some versions. */
+.workbench-hover-container,
+.workbench-hover-pointer {
+  display: none !important;
+  pointer-events: none !important;
+}
+
+.vim-status-bar {
+  display: none;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  padding: 0 9px;
+  overflow: hidden;
+  border-top: 1px solid #34362f;
+  color: #afb2a8;
+  background: #191a17;
+  font: 10px/23px var(--font-mono);
+  white-space: nowrap;
+}
+
+.vim-enabled .vim-status-bar {
+  display: flex;
+}
+
+.vim-status-bar > span:first-child {
+  color: var(--color-accent);
+  font-weight: 500;
+}
+
+.vim-status-bar .vim-notification {
+  color: #ff9a8d;
+}
+
+.vim-status-bar input {
+  min-width: 100px;
+  flex: 1;
+  border: 0;
+  outline: 0;
+  color: #e6e7e1;
+  background: transparent;
+  font: inherit;
+}
+
+.editor-loading {
+  display: grid;
+  height: 100%;
+  place-items: center;
+  color: #8d9086;
+  font: 12px var(--font-mono);
+}
+
+.theme-light .source-heading {
+  background: var(--color-panel-heading-bg);
+}
+
+.theme-light .source-search {
+  color: #666b60;
+}
+
+.theme-light .source-search:hover {
+  color: #242820;
+  background: #d7d9d0;
+}
+
+.theme-light .source-search:disabled:hover {
+  color: #666b60;
+  background: transparent;
+}
+
+.theme-light .editor-wrap {
+  background: #fff;
+}
+
+.theme-light .editor-wrap .monaco-editor .line-numbers.active-line-number {
+  color: #789d0b !important;
+}
+
+.theme-light .editor-loading {
+  color: #72776b;
+}
+
+.theme-light .vim-status-bar {
+  border-top-color: #d1d3ca;
+  color: #555a4f;
+  background: #ecece7;
+}
+
+.theme-light .vim-status-bar > span:first-child {
+  color: #617a16;
+}
+
+.theme-light .vim-status-bar input {
+  color: #292d25;
+}
+
+@media (max-width: 760px) {
+  .source-panel {
+    height: 60vh;
+  }
+}

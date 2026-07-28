@@ -1,0 +1,54 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
+
+:root {
+  --font-sans: 'DM Sans', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+  --color-text: #e8e9e3;
+  --color-app-bg: #11120f;
+  --color-bar-bg: #171814;
+  --color-panel-heading: #d5d6cf;
+  --color-panel-heading-bg: #1c1d19;
+  --color-border: #30322b;
+  --color-border-subtle: #3a3c34;
+  --color-accent: #d9fa66;
+  --color-accent-hover: #e4ff83;
+  --color-success: #b9dc55;
+  --color-error: #ff7f6e;
+  --color-warning: #e6b85c;
+  --color-compiling: #4a9eff;
+  --topbar-height: 44px;
+  --tabbar-height: 32px;
+  --footer-height: 24px;
+  --panel-heading-height: 32px;
+  --radius-control: 6px;
+  --radius-panel: 7px;
+  --scrollbar-size: 10px;
+  --color-scrollbar-thumb: #4b4e44;
+  --color-scrollbar-thumb-hover: #65695d;
+  --color-scrollbar-track: transparent;
+
+  color: var(--color-text);
+  background: var(--color-app-bg);
+  font-family: var(--font-sans);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+.theme-light {
+  --color-text: #25271f;
+  --color-app-bg: #f3f3ee;
+  --color-bar-bg: #f7f7f3;
+  --color-panel-heading: #454a3f;
+  --color-panel-heading-bg: #e8e9e2;
+  --color-border: #d2d4ca;
+  --color-border-subtle: #b8bbb0;
+  --color-success: #66801c;
+  --color-error: #ba3f34;
+  --color-compiling: #1672c4;
+  --color-scrollbar-thumb: #aeb2a6;
+  --color-scrollbar-thumb-hover: #8f9487;
+
+  color: var(--color-text);
+  background: var(--color-app-bg);
+  color-scheme: light;
+}

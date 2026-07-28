@@ -12,13 +12,42 @@ import libertinusItalic from '../assets/fonts/LibertinusSerif-Italic.otf?inline'
 import libertinusBoldItalic from '../assets/fonts/LibertinusSerif-BoldItalic.otf?inline'
 import newComputerModernMath from '../assets/fonts/NewCMMath-Regular.otf?inline'
 import { formatError } from '../lib/documents'
-import type { EditorDocument } from '../types'
+import type { EditorDiagnostic, EditorDocument } from '../types'
 
 interface Diagnostic {
   severity: string
   path: string
   range: string
   message: string
+}
+
+function parseDiagnostic(
+  diagnostic: Diagnostic,
+  mainFilePath: string,
+): EditorDiagnostic | undefined {
+  const diagnosticPath = diagnostic.path.replace(/^\/+/, '')
+  const sourcePath = mainFilePath.replace(/^\/+/, '')
+  if (
+    diagnosticPath
+    && diagnosticPath !== sourcePath
+    && diagnosticPath.split('/').at(-1) !== sourcePath.split('/').at(-1)
+  ) return undefined
+  const range = /^(\d+):(\d+)(?:-(\d+):(\d+))?$/.exec(diagnostic.range)
+  if (!range) return undefined
+  const startLineNumber = Number(range[1]) + 1
+  const endLineNumber = Number(range[3] ?? range[1]) + 1
+  const startColumn = Number(range[2]) + 1
+  const endColumn = Number(range[4] ?? range[2]) + 1
+  return {
+    severity: diagnostic.severity.toLowerCase() === 'error'
+      ? 'error'
+      : diagnostic.severity.toLowerCase() === 'warning' ? 'warning' : 'info',
+    message: diagnostic.message,
+    startLineNumber,
+    startColumn,
+    endLineNumber,
+    endColumn: Math.max(endColumn, startColumn + Number(endLineNumber === startLineNumber)),
+  }
 }
 
 const bundledFonts = [
@@ -36,6 +65,19 @@ interface CompilerEntry {
 
 const compilerPromises = new Map<string, Promise<CompilerEntry>>()
 let compileQueue = Promise.resolve()
+
+function waitForStatusPaint() {
+  return new Promise<void>((resolve) => {
+    let resolved = false
+    const finish = () => {
+      if (resolved) return
+      resolved = true
+      resolve()
+    }
+    window.setTimeout(finish, 50)
+    window.requestAnimationFrame(() => window.setTimeout(finish, 0))
+  })
+}
 
 function extractFontFamilies(source: string) {
   const families = new Set<string>()
@@ -116,11 +158,13 @@ export function useTypstCompilation(
     const timeout = window.setTimeout(() => {
       updateRef.current(document.id, {
         compileState: 'compiling',
-        compileDurationMs: undefined,
         messages: ['Compiling document...'],
+        diagnostics: [],
       })
 
       compileQueue = compileQueue.then(async () => {
+        if (version !== versionRef.current) return
+        await waitForStatusPaint()
         if (version !== versionRef.current) return
         const started = performance.now()
 
@@ -138,6 +182,10 @@ export function useTypstCompilation(
           if (version !== versionRef.current) return
 
           const diagnostics = (output.diagnostics ?? []) as Diagnostic[]
+          const editorDiagnostics = diagnostics.flatMap((diagnostic) => {
+            const parsed = parseDiagnostic(diagnostic, mainFilePath)
+            return parsed ? [parsed] : []
+          })
           const lines = diagnostics.map(
             (item) => `${item.severity.toUpperCase()} ${item.path || document.fileName}:${item.range}  ${item.message}`,
           )
@@ -148,6 +196,7 @@ export function useTypstCompilation(
               compileState: 'error',
               compileDurationMs: undefined,
               messages: lines.length ? lines : ['Compilation failed without diagnostics.'],
+              diagnostics: editorDiagnostics,
             })
             return
           }
@@ -173,6 +222,7 @@ export function useTypstCompilation(
               ...lines,
               lines.length ? 'PDF updated with warnings.' : 'PDF preview is up to date.',
             ],
+            diagnostics: editorDiagnostics,
           })
         } catch (error) {
           if (version !== versionRef.current) return
@@ -181,6 +231,7 @@ export function useTypstCompilation(
             compileState: 'error',
             compileDurationMs: undefined,
             messages: [formatError(error)],
+            diagnostics: [],
           })
         }
       })

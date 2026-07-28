@@ -13,6 +13,10 @@ interface ToolbarProps {
   onShowPreviewPositionChange(enabled: boolean): void
   autoScrollEnabled: boolean
   onAutoScrollEnabledChange(enabled: boolean): void
+  lightThemeEnabled: boolean
+  onLightThemeEnabledChange(enabled: boolean): void
+  foldingEnabled: boolean
+  onFoldingEnabledChange(enabled: boolean): void
 }
 
 export function Toolbar({
@@ -26,6 +30,10 @@ export function Toolbar({
   onShowPreviewPositionChange,
   autoScrollEnabled,
   onAutoScrollEnabledChange,
+  lightThemeEnabled,
+  onLightThemeEnabledChange,
+  foldingEnabled,
+  onFoldingEnabledChange,
 }: ToolbarProps) {
   const documentTitle = document
     ? [document.repoName, document.fileName].filter(Boolean).join(' / ')
@@ -71,6 +79,10 @@ export function Toolbar({
           onShowPreviewPositionChange={onShowPreviewPositionChange}
           autoScrollEnabled={autoScrollEnabled}
           onAutoScrollEnabledChange={onAutoScrollEnabledChange}
+          lightThemeEnabled={lightThemeEnabled}
+          onLightThemeEnabledChange={onLightThemeEnabledChange}
+          foldingEnabled={foldingEnabled}
+          onFoldingEnabledChange={onFoldingEnabledChange}
         />
       </div>
     </header>

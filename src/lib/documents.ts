@@ -93,6 +93,7 @@ export function createDocument(input?: {
     fallbackUuid: crypto.randomUUID(),
     compileState: 'loading',
     messages: ['Initializing Typst compiler...'],
+    diagnostics: [],
   }
 }
 

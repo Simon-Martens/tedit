@@ -4,6 +4,8 @@ import {
   GlobalWorkerOptions,
   getDocument,
   type PDFDocumentProxy,
+  type PDFPageProxy,
+  type PageViewport,
   type RenderTask,
 } from 'pdfjs-dist'
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
@@ -27,6 +29,14 @@ interface SourceSignature {
   after: string[]
   targetIndex: number
   wordCount: number
+}
+
+interface PageRenderEntry {
+  page: PDFPageProxy
+  canvas: HTMLCanvasElement
+  context: CanvasRenderingContext2D
+  viewport: PageViewport
+  pageNumber: number
 }
 
 const WORD_PATTERN = /[\p{L}\p{N}\p{M}_]+/gu
@@ -138,6 +148,7 @@ export function PdfPreview({
   autoScrollEnabled: boolean
 }) {
   const [pdf, setPdf] = useState<PDFDocumentProxy>()
+  const [loadedPdfUrl, setLoadedPdfUrl] = useState<string>()
   const [displayedUrl, setDisplayedUrl] = useState<string>()
   const [pageNumber, setPageNumber] = useState(1)
   const [zoom, setZoom] = useState<PdfZoom>('width')
@@ -198,6 +209,8 @@ export function PdfPreview({
   useEffect(() => {
     if (!document.pdfUrl || document.pdfUrl === displayedUrlRef.current) return
     const url = document.pdfUrl
+    renderVersionRef.current += 1
+    renderTaskRef.current?.cancel()
     const loadingTask = getDocument({ url })
     let cancelled = false
 
@@ -210,6 +223,7 @@ export function PdfPreview({
         if (current) void current.cleanup()
         return nextPdf
       })
+      setLoadedPdfUrl(url)
       setPageNumber((current) => Math.min(current, nextPdf.numPages))
     }).catch(() => undefined)
 
@@ -220,8 +234,8 @@ export function PdfPreview({
   }, [document.pdfUrl])
 
   useEffect(() => {
-    if (!pdf || !document.pdfUrl) return
-    const pdfUrl = document.pdfUrl
+    if (!pdf || !loadedPdfUrl || loadedPdfUrl !== document.pdfUrl) return
+    const pdfUrl = loadedPdfUrl
     const version = ++renderVersionRef.current
     renderTaskRef.current?.cancel()
 
@@ -229,10 +243,11 @@ export function PdfPreview({
       const container = viewportRef.current
       if (!container || version !== renderVersionRef.current) return
 
-      const availableWidth = Math.max(100, container.clientWidth - (showPreviewPosition ? 30 : 16))
+      const availableWidth = Math.max(100, container.clientWidth - 16)
       const availableHeight = Math.max(100, container.clientHeight - 12)
       const pixelRatio = Math.min(window.devicePixelRatio || 1, 2)
       const nextPages = window.document.createDocumentFragment()
+      const renderEntries: PageRenderEntry[] = []
       const currentPages = pageStackRef.current
       const currentCanvases = currentPages?.querySelectorAll<HTMLCanvasElement>('[data-page]')
       let anchorPage = Math.min(pageNumber, pdf.numPages)
@@ -269,29 +284,34 @@ export function PdfPreview({
         canvas.style.height = `${Math.ceil(viewport.height)}px`
         const context = canvas.getContext('2d')
         if (!context) continue
+        const row = window.document.createElement('div')
+        row.className = 'pdf-page-row'
+        row.append(canvas)
+        nextPages.append(row)
+        renderEntries.push({ page, canvas, context, viewport: renderViewport, pageNumber: index })
+      }
 
-        const task = page.render({
-          canvas,
-          canvasContext: context,
-          viewport: renderViewport,
+      const prioritizedEntries = renderEntries.sort((left, right) => (
+        Math.abs(left.pageNumber - anchorPage) - Math.abs(right.pageNumber - anchorPage)
+      ))
+      const renderPage = async (entry: typeof renderEntries[number]) => {
+        const task = entry.page.render({
+          canvas: entry.canvas,
+          canvasContext: entry.context,
+          viewport: entry.viewport,
           annotationMode: AnnotationMode.DISABLE,
         })
         renderTaskRef.current = task
         await task.promise
-        if (version !== renderVersionRef.current) return
-        const row = window.document.createElement('div')
-        row.className = 'pdf-page-row'
-        const gutter = window.document.createElement('div')
-        gutter.className = 'pdf-page-gutter'
-        gutter.setAttribute('aria-hidden', 'true')
-        row.append(gutter, canvas)
-        nextPages.append(row)
+        return version === renderVersionRef.current
       }
 
+      const firstEntry = prioritizedEntries.shift()
+      if (!firstEntry || !await renderPage(firstEntry)) return
       const pages = pageStackRef.current
       if (!pages || version !== renderVersionRef.current) return
       pages.replaceChildren(nextPages)
-      setRenderedVersion(version)
+      setRenderedVersion((current) => current + 1)
       const anchorCanvas = pages.querySelector<HTMLCanvasElement>(`[data-page="${anchorPage}"]`)
       if (anchorCanvas) {
         container.scrollTop = Math.max(0, anchorCanvas.offsetTop + anchorOffset * anchorCanvas.clientHeight - 6)
@@ -303,13 +323,18 @@ export function PdfPreview({
         setDisplayedUrl(pdfUrl)
         if (previousUrl) URL.revokeObjectURL(previousUrl)
       }
+
+      for (const entry of prioritizedEntries) {
+        if (!await renderPage(entry)) return
+      }
+      setRenderedVersion((current) => current + 1)
     }
 
     void render().catch((error) => {
       if (error instanceof Error && error.name === 'RenderingCancelledException') return
     })
     return () => renderTaskRef.current?.cancel()
-  }, [pdf, zoom, rotation, sizeVersion, document.pdfUrl, showPreviewPosition])
+  }, [pdf, loadedPdfUrl, zoom, rotation, sizeVersion, document.pdfUrl])
 
   useEffect(() => {
     textTokensRef.current.clear()
@@ -356,7 +381,7 @@ export function PdfPreview({
         const pageWidth = Number(canvas.dataset.pageWidth)
         const scale = canvas.clientWidth / pageWidth
         const top = canvas.offsetTop + Math.max(0, y - 3) * scale
-        marker.style.left = `${canvas.offsetLeft - 11}px`
+        marker.style.left = `${canvas.offsetLeft + 7}px`
         marker.style.top = `${top}px`
         marker.classList.add('visible')
         if (autoScrollEnabled) {
@@ -388,7 +413,7 @@ export function PdfPreview({
       else if (rotation === 180) y = pageHeight - unrotatedY
       else if (rotation === 270) y = pageWidth - position.x
 
-      const left = canvas.offsetLeft - 11
+      const left = canvas.offsetLeft + 7
       const top = canvas.offsetTop + Math.max(0, y - 3) * scale
       marker.style.left = `${left}px`
       marker.style.top = `${top}px`

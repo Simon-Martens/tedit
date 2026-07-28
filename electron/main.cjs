@@ -14,6 +14,8 @@ const defaultSettings = {
   vimEnabled: false,
   showPreviewPosition: false,
   autoScrollEnabled: true,
+  lightThemeEnabled: false,
+  foldingEnabled: true,
 }
 const settingsPath = path.join(app.getPath('userData'), 'settings.json')
 const sessionPath = path.join(app.getPath('cache'), 'tedit', 'session.json')

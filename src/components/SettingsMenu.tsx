@@ -8,6 +8,10 @@ export function SettingsMenu({
   onShowPreviewPositionChange,
   autoScrollEnabled,
   onAutoScrollEnabledChange,
+  lightThemeEnabled,
+  onLightThemeEnabledChange,
+  foldingEnabled,
+  onFoldingEnabledChange,
 }: {
   vimEnabled: boolean
   onVimEnabledChange(enabled: boolean): void
@@ -15,6 +19,10 @@ export function SettingsMenu({
   onShowPreviewPositionChange(enabled: boolean): void
   autoScrollEnabled: boolean
   onAutoScrollEnabledChange(enabled: boolean): void
+  lightThemeEnabled: boolean
+  onLightThemeEnabledChange(enabled: boolean): void
+  foldingEnabled: boolean
+  onFoldingEnabledChange(enabled: boolean): void
 }) {
   const [open, setOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -52,6 +60,17 @@ export function SettingsMenu({
           <div className="settings-popover-title">Editor settings</div>
           <label className="setting-row">
             <span>
+              <strong>Light color scheme</strong>
+              <small>Use a light theme throughout the app</small>
+            </span>
+            <input
+              type="checkbox"
+              checked={lightThemeEnabled}
+              onChange={(event) => onLightThemeEnabledChange(event.target.checked)}
+            />
+          </label>
+          <label className="setting-row">
+            <span>
               <strong>Vim mode</strong>
               <small>Vim motions and commands</small>
             </span>
@@ -59,6 +78,17 @@ export function SettingsMenu({
               type="checkbox"
               checked={vimEnabled}
               onChange={(event) => onVimEnabledChange(event.target.checked)}
+            />
+          </label>
+          <label className="setting-row">
+            <span>
+              <strong>Code folding</strong>
+              <small>Collapse multiline Typst blocks</small>
+            </span>
+            <input
+              type="checkbox"
+              checked={foldingEnabled}
+              onChange={(event) => onFoldingEnabledChange(event.target.checked)}
             />
           </label>
           <label className="setting-row">

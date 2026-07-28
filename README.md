@@ -2,6 +2,8 @@
 
 An Electron desktop application for editing Typst documents with Monaco, live compiler diagnostics, tabs, and a synchronized PDF preview.
 
+*This App is 100% vibe coded. It just puts together already existing pieces: electron, typst, monaco editor &amp; pdf.js. As of right now it is just for personal use.*
+
 ## Run locally
 
 ```sh

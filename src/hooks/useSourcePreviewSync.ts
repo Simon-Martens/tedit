@@ -7,14 +7,15 @@ const DISABLED_STATUS: SourceSyncStatus = {
   message: 'Save the document to enable source synchronization.',
 }
 
-export function useSourcePreviewSync(document: EditorDocument | undefined) {
+export function useSourcePreviewSync(document: EditorDocument | undefined, enabled: boolean) {
   const [positions, setPositions] = useState<PreviewPosition[]>([])
   const [sourceCursorLocation, setSourceCursorLocation] = useState<SourceCursorLocation>()
   const [status, setStatus] = useState<SourceSyncStatus>(DISABLED_STATUS)
   const lastLocationRef = useRef<SourceCursorLocation | undefined>(undefined)
   const requestIdRef = useRef(0)
   const fallbackTimerRef = useRef<number | undefined>(undefined)
-  const canLocate = document !== undefined
+  const canLocate = enabled
+    && document !== undefined
     && status.state === 'ready'
     && document.compileState === 'success'
     && document.attemptedRevision === document.sourceRevision
@@ -29,6 +30,14 @@ export function useSourcePreviewSync(document: EditorDocument | undefined) {
     setPositions([])
     if (!document) {
       setStatus(DISABLED_STATUS)
+      return
+    }
+    if (!enabled) {
+      setStatus({
+        documentId: document.id,
+        state: 'disabled',
+        message: 'Source synchronization is disabled in settings.',
+      })
       return
     }
     setStatus({ documentId: document.id, state: 'starting', message: 'Starting source synchronization...' })
@@ -66,15 +75,15 @@ export function useSourcePreviewSync(document: EditorDocument | undefined) {
       removeStatusListener()
       desktop.stopSourceSync()
     }
-  }, [document?.id, document?.filePath])
+  }, [document?.id, document?.filePath, enabled])
 
   useEffect(() => {
-    if (!window.typstDesktop || !document?.filePath) return
+    if (!enabled || !window.typstDesktop || !document?.filePath) return
     window.typstDesktop.updateSourceSync({ documentId: document.id, source: document.source })
-  }, [document?.id, document?.filePath, document?.sourceRevision])
+  }, [document?.id, document?.filePath, document?.sourceRevision, enabled])
 
   useEffect(() => {
-    if (document && (
+    if (enabled && document && (
       status.state === 'ready'
       && document.compileState === 'success'
       && document.attemptedRevision === document.sourceRevision
@@ -87,9 +96,10 @@ export function useSourcePreviewSync(document: EditorDocument | undefined) {
         ...lastLocationRef.current.lookup,
       })
     }
-  }, [document?.id, document?.compileState, document?.attemptedRevision, document?.sourceRevision, status.state])
+  }, [document?.id, document?.compileState, document?.attemptedRevision, document?.sourceRevision, status.state, enabled])
 
   const locate = (location: SourceCursorLocation) => {
+    if (!enabled) return
     lastLocationRef.current = location
     requestIdRef.current += 1
     setSourceCursorLocation(location)
