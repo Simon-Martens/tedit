@@ -54,6 +54,8 @@ export interface DesktopApi {
   updateSettings(settings: Partial<AppSettings>): Promise<AppSettings>
   restoreSession(): Promise<DesktopSession>
   saveSession(session: { filePaths: string[]; activeFilePath?: string }): Promise<void>
+  readClipboard(): string
+  writeClipboard(text: string): void
 }
 
 export interface PreviewPosition {

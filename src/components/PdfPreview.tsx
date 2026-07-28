@@ -37,6 +37,8 @@ interface PageRenderEntry {
   context: CanvasRenderingContext2D
   viewport: PageViewport
   pageNumber: number
+  renderWidth: number
+  renderHeight: number
 }
 
 const WORD_PATTERN = /[\p{L}\p{N}\p{M}_]+/gu
@@ -261,8 +263,13 @@ export function PdfPreview({
         }
       }
 
+      const pdfPages = await Promise.all(
+        Array.from({ length: pdf.numPages }, (_, index) => pdf.getPage(index + 1)),
+      )
+      if (version !== renderVersionRef.current) return
+
       for (let index = 1; index <= pdf.numPages; index += 1) {
-        const page = await pdf.getPage(index)
+        const page = pdfPages[index - 1]
         const baseViewport = page.getViewport({ scale: 1, rotation })
         let scale: number
         if (zoom === 'width') scale = availableWidth / baseViewport.width
@@ -278,8 +285,6 @@ export function PdfPreview({
         const unrotatedViewport = page.getViewport({ scale: 1, rotation: 0 })
         canvas.dataset.pageWidth = String(unrotatedViewport.width)
         canvas.dataset.pageHeight = String(unrotatedViewport.height)
-        canvas.width = Math.ceil(renderViewport.width)
-        canvas.height = Math.ceil(renderViewport.height)
         canvas.style.width = `${Math.ceil(viewport.width)}px`
         canvas.style.height = `${Math.ceil(viewport.height)}px`
         const context = canvas.getContext('2d')
@@ -288,13 +293,23 @@ export function PdfPreview({
         row.className = 'pdf-page-row'
         row.append(canvas)
         nextPages.append(row)
-        renderEntries.push({ page, canvas, context, viewport: renderViewport, pageNumber: index })
+        renderEntries.push({
+          page,
+          canvas,
+          context,
+          viewport: renderViewport,
+          pageNumber: index,
+          renderWidth: Math.ceil(renderViewport.width),
+          renderHeight: Math.ceil(renderViewport.height),
+        })
       }
 
       const prioritizedEntries = renderEntries.sort((left, right) => (
         Math.abs(left.pageNumber - anchorPage) - Math.abs(right.pageNumber - anchorPage)
       ))
       const renderPage = async (entry: typeof renderEntries[number]) => {
+        entry.canvas.width = entry.renderWidth
+        entry.canvas.height = entry.renderHeight
         const task = entry.page.render({
           canvas: entry.canvas,
           canvasContext: entry.context,
@@ -500,11 +515,14 @@ export function PdfPreview({
       <div className="panel-heading preview-heading">
         <span className="preview-title">
           PDF Preview
-          {isUpdating && displayedUrl && <i className="preview-spinner" />}
-          <i
-            className={`source-sync-indicator ${sourceSyncStatus.state}`}
-            title={sourceSyncStatus.message}
-          />
+          {isUpdating && displayedUrl ? (
+            <i className="preview-spinner" title="Updating PDF preview" />
+          ) : (
+            <i
+              className={`source-sync-indicator ${sourceSyncStatus.state}`}
+              title={sourceSyncStatus.message}
+            />
+          )}
         </span>
         <PdfToolbar
           page={pageNumber}

@@ -20,9 +20,9 @@
 .preview-spinner {
   width: 9px;
   height: 9px;
-  border: 1.5px solid #55594b;
-  border-top-color: var(--color-accent);
   border-radius: 50%;
+  background: conic-gradient(from 30deg, transparent 10%, #236fc4 45%, #62b5ff 90%);
+  mask: radial-gradient(farthest-side, transparent calc(100% - 1.5px), #000 0);
   animation: spin 700ms linear infinite;
 }
 

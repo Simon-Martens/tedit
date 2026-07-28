@@ -1,9 +1,63 @@
 import { useEffect, useRef, useState } from 'react'
 import Editor, { type OnMount } from '@monaco-editor/react'
-import { initVimMode, type VimAdapterInstance } from 'monaco-vim'
+import { initVimMode, VimMode, type VimAdapterInstance } from 'monaco-vim'
 import { configureTypstLanguage, getTypstFoldingRanges } from '../lib/typstLanguage'
 import type { EditorDocument, SourceCursorLocation } from '../types'
 import { Icon } from './Icon'
+
+interface VimRegister {
+  linewise: boolean
+  blockwise: boolean
+  setText(text: string, linewise?: boolean, blockwise?: boolean): void
+  pushText(text: string, linewise?: boolean): void
+  clear(): void
+  toString(): string
+}
+
+interface VimClipboardApi {
+  defineRegister(name: string, register: VimRegister): void
+  getRegisterController(): { isValidRegister(name: string): boolean }
+}
+
+let fallbackClipboard = ''
+
+function createClipboardRegister(): VimRegister {
+  let lastWrittenText = ''
+  const register: VimRegister = {
+    linewise: false,
+    blockwise: false,
+    setText(text, linewise = false, blockwise = false) {
+      lastWrittenText = text
+      register.linewise = linewise
+      register.blockwise = blockwise
+      fallbackClipboard = text
+      if (window.typstDesktop) window.typstDesktop.writeClipboard(text)
+      else void navigator.clipboard?.writeText(text).catch(() => undefined)
+    },
+    pushText(text, linewise = false) {
+      register.setText(`${register.toString()}${text}`, register.linewise || linewise, register.blockwise)
+    },
+    clear() {
+      register.setText('')
+    },
+    toString() {
+      const text = window.typstDesktop?.readClipboard() ?? fallbackClipboard
+      if (text !== lastWrittenText) {
+        register.linewise = false
+        register.blockwise = false
+      }
+      return text
+    },
+  }
+  return register
+}
+
+function registerClipboardRegisters() {
+  const vim = (VimMode as unknown as { Vim: VimClipboardApi }).Vim
+  const controller = vim.getRegisterController()
+  if (!controller.isValidRegister('+')) vim.defineRegister('+', createClipboardRegister())
+  if (!controller.isValidRegister('*')) vim.defineRegister('*', createClipboardRegister())
+}
 
 function findRenderableOffset(text: string, preferredOffset: number) {
   for (const link of text.matchAll(/#link\s*\([^)]*\)\s*\[([^\]]*)\]/g)) {
@@ -44,6 +98,7 @@ export function SourcePane({
   foldingEnabled,
   onCursorPositionChange,
   onCursorChange,
+  onSave,
 }: {
   document: EditorDocument
   onChange(value: string): void
@@ -53,6 +108,7 @@ export function SourcePane({
   foldingEnabled: boolean
   onCursorPositionChange(location: SourceCursorLocation): void
   onCursorChange(line: number, column: number): void
+  onSave(): void
 }) {
   const editorRef = useRef<Parameters<OnMount>[0] | null>(null)
   const monacoRef = useRef<Parameters<OnMount>[1] | null>(null)
@@ -68,15 +124,18 @@ export function SourcePane({
   const diagnosticsRef = useRef(document.diagnostics)
   const cursorCallbackRef = useRef(onCursorPositionChange)
   const cursorPositionCallbackRef = useRef(onCursorChange)
+  const saveCallbackRef = useRef(onSave)
   const [canUndo, setCanUndo] = useState(false)
   const [canRedo, setCanRedo] = useState(false)
   cursorCallbackRef.current = onCursorPositionChange
   cursorPositionCallbackRef.current = onCursorChange
+  saveCallbackRef.current = onSave
   foldingEnabledRef.current = foldingEnabled
   diagnosticsRef.current = document.diagnostics
 
   const initializeVim = (editor: Parameters<OnMount>[0]) => {
     vimAdapterRef.current?.dispose()
+    registerClipboardRegisters()
     vimAdapterRef.current = initVimMode(editor, vimStatusRef.current)
   }
 
@@ -212,6 +271,15 @@ export function SourcePane({
   useEffect(() => {
     applyDiagnostics()
   }, [document.diagnostics])
+
+  useEffect(() => {
+    const commands = VimMode.commands as typeof VimMode.commands & { save?: () => void }
+    const save = () => saveCallbackRef.current()
+    commands.save = save
+    return () => {
+      if (commands.save === save) delete commands.save
+    }
+  }, [])
 
   useEffect(() => {
     return () => {
@@ -398,6 +466,13 @@ export function SourcePane({
             smoothScrolling: true,
             renderLineHighlight: 'none',
             overviewRulerBorder: false,
+            guides: {
+              indentation: false,
+              bracketPairs: false,
+              bracketPairsHorizontal: false,
+              highlightActiveIndentation: false,
+              highlightActiveBracketPair: false,
+            },
             scrollbar: {
               vertical: 'visible',
               horizontal: 'visible',

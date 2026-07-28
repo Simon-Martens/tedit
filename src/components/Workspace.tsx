@@ -28,6 +28,7 @@ export function Workspace({
   lightThemeEnabled,
   foldingEnabled,
   compilationOpen,
+  onSave,
 }: {
   document: EditorDocument
   onSourceChange(value: string): void
@@ -42,6 +43,7 @@ export function Workspace({
   lightThemeEnabled: boolean
   foldingEnabled: boolean
   compilationOpen: boolean
+  onSave(): void
 }) {
   const [leftPanePercent, setLeftPanePercent] = useState(50)
   const [sourcePanePercent, setSourcePanePercent] = useState(67)
@@ -87,7 +89,9 @@ export function Workspace({
       <section
         aria-label="Editor and compilation output"
         ref={leftPaneRef}
-        className={`left-pane ${compilationOpen ? 'output-expanded' : 'output-hidden'}`}
+        className={`left-pane ${compilationOpen
+          ? document.compileState === 'error' ? 'output-error' : 'output-expanded'
+          : 'output-hidden'}`}
         style={{
           '--source-pane-size': `${sourcePanePercent}%`,
         } as CSSProperties}
@@ -101,26 +105,31 @@ export function Workspace({
           foldingEnabled={foldingEnabled}
           onCursorPositionChange={onCursorPositionChange}
           onCursorChange={onCursorChange}
+          onSave={onSave}
         />
         {compilationOpen && (
           <>
-          <div
-            className="pane-resizer row-resizer"
-            role="separator"
-            aria-label="Resize source and compilation panes"
-            aria-orientation="horizontal"
-            aria-valuemin={35}
-            aria-valuemax={80}
-            aria-valuenow={Math.round(sourcePanePercent)}
-            tabIndex={0}
-            onKeyDown={(event) => resizeWithKeyboard(event, 'rows')}
-            onPointerDown={(event) => {
-              event.preventDefault()
-              event.currentTarget.setPointerCapture(event.pointerId)
-            }}
-            onPointerMove={resizeRows}
-          />
-          <CompilationPane document={document} />
+            {document.compileState === 'error' ? (
+              <div className="output-auto-divider" />
+            ) : (
+              <div
+                className="pane-resizer row-resizer"
+                role="separator"
+                aria-label="Resize source and compilation panes"
+                aria-orientation="horizontal"
+                aria-valuemin={35}
+                aria-valuemax={80}
+                aria-valuenow={Math.round(sourcePanePercent)}
+                tabIndex={0}
+                onKeyDown={(event) => resizeWithKeyboard(event, 'rows')}
+                onPointerDown={(event) => {
+                  event.preventDefault()
+                  event.currentTarget.setPointerCapture(event.pointerId)
+                }}
+                onPointerMove={resizeRows}
+              />
+            )}
+            <CompilationPane document={document} />
           </>
         )}
       </section>

@@ -21,4 +21,6 @@ contextBridge.exposeInMainWorld('typstDesktop', {
   updateSettings: (settings) => ipcRenderer.invoke('settings:update', settings),
   restoreSession: () => ipcRenderer.invoke('session:restore'),
   saveSession: (session) => ipcRenderer.invoke('session:save', session),
+  readClipboard: () => ipcRenderer.sendSync('clipboard:read'),
+  writeClipboard: (text) => ipcRenderer.sendSync('clipboard:write', text),
 })

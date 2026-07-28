@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, ipcMain, Menu, session } = require('electron')
+const { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, session } = require('electron')
 const { execFile } = require('node:child_process')
 const fs = require('node:fs/promises')
 const path = require('node:path')
@@ -55,6 +55,14 @@ ipcMain.handle('settings:update', (_event, update) => {
     return settings
   })
   return settingsWrite
+})
+
+ipcMain.on('clipboard:read', (event) => {
+  event.returnValue = clipboard.readText()
+})
+ipcMain.on('clipboard:write', (event, text) => {
+  clipboard.writeText(typeof text === 'string' ? text : '')
+  event.returnValue = undefined
 })
 
 async function getGitMetadata(filePath) {
@@ -153,6 +161,15 @@ function createWindow() {
 
   window.once('ready-to-show', () => window.show())
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+  window.webContents.on('before-input-event', (event, input) => {
+    if (input.type !== 'keyDown' || (!input.control && !input.meta)) return
+    const command = input.key.toLowerCase()
+    if (command === 'c') window.webContents.copy()
+    else if (command === 'x') window.webContents.cut()
+    else if (command === 'v') window.webContents.paste()
+    else return
+    event.preventDefault()
+  })
 
   if (isDevelopment) {
     window.loadURL(process.env.VITE_DEV_SERVER_URL)

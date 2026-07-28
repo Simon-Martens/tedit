@@ -592,6 +592,19 @@ a:focus-visible {
   grid-template-rows: minmax(0, 1fr);
 }
 
+.left-pane.output-error {
+  grid-template-rows: minmax(180px, 1fr) 1px auto;
+}
+
+.output-auto-divider {
+  background: var(--color-border);
+}
+
+.output-error .output-panel,
+.output-error .output-lines {
+  max-height: 260px;
+}
+
 .source-panel,
 .output-panel,
 .preview-panel {
@@ -807,6 +820,7 @@ a:focus-visible {
   background: #647d17;
 }
 
+.theme-light .output-auto-divider,
 .theme-light .pane-resizer {
   background: #d0d2c9;
 }

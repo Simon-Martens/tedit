@@ -392,6 +392,7 @@ function App() {
           lightThemeEnabled={lightThemeEnabled}
           foldingEnabled={foldingEnabled}
           compilationOpen={compilationOpen}
+          onSave={() => void saveFile()}
         />
       ) : (
         <section className="workspace-empty">
