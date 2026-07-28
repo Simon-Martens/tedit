@@ -4,9 +4,17 @@ import { Icon } from './Icon'
 export function SettingsMenu({
   vimEnabled,
   onVimEnabledChange,
+  showPreviewPosition,
+  onShowPreviewPositionChange,
+  autoScrollEnabled,
+  onAutoScrollEnabledChange,
 }: {
   vimEnabled: boolean
   onVimEnabledChange(enabled: boolean): void
+  showPreviewPosition: boolean
+  onShowPreviewPositionChange(enabled: boolean): void
+  autoScrollEnabled: boolean
+  onAutoScrollEnabledChange(enabled: boolean): void
 }) {
   const [open, setOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -51,6 +59,28 @@ export function SettingsMenu({
               type="checkbox"
               checked={vimEnabled}
               onChange={(event) => onVimEnabledChange(event.target.checked)}
+            />
+          </label>
+          <label className="setting-row">
+            <span>
+              <strong>Show position</strong>
+              <small>Display the PDF source marker</small>
+            </span>
+            <input
+              type="checkbox"
+              checked={showPreviewPosition}
+              onChange={(event) => onShowPreviewPositionChange(event.target.checked)}
+            />
+          </label>
+          <label className="setting-row">
+            <span>
+              <strong>Autoscroll</strong>
+              <small>Follow the editor position in the PDF</small>
+            </span>
+            <input
+              type="checkbox"
+              checked={autoScrollEnabled}
+              onChange={(event) => onAutoScrollEnabledChange(event.target.checked)}
             />
           </label>
         </div>

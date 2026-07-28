@@ -9,6 +9,10 @@ interface ToolbarProps {
   onSave(): void
   vimEnabled: boolean
   onVimEnabledChange(enabled: boolean): void
+  showPreviewPosition: boolean
+  onShowPreviewPositionChange(enabled: boolean): void
+  autoScrollEnabled: boolean
+  onAutoScrollEnabledChange(enabled: boolean): void
 }
 
 export function Toolbar({
@@ -18,16 +22,24 @@ export function Toolbar({
   onSave,
   vimEnabled,
   onVimEnabledChange,
+  showPreviewPosition,
+  onShowPreviewPositionChange,
+  autoScrollEnabled,
+  onAutoScrollEnabledChange,
 }: ToolbarProps) {
+  const documentTitle = document
+    ? [document.repoName, document.fileName].filter(Boolean).join(' / ')
+    : 'No document'
+
   return (
     <header className="topbar">
-      <div className="brand" aria-label="Typst Edit">
+      <div className="brand" aria-label="tedit">
         <span className="brand-mark">T/</span>
-        <span>Typst Edit</span>
+        <span>tedit</span>
       </div>
       <div className="document-title">
         <Icon name="file" />
-        <span>{document?.fileName ?? 'No document'}</span>
+        <span>{documentTitle}</span>
         {document?.isDirty && <span className="dirty-dot" title="Unsaved changes" />}
       </div>
       <div className="toolbar">
@@ -52,7 +64,14 @@ export function Toolbar({
           <Icon name="download" />
           <span>PDF</span>
         </a>
-        <SettingsMenu vimEnabled={vimEnabled} onVimEnabledChange={onVimEnabledChange} />
+        <SettingsMenu
+          vimEnabled={vimEnabled}
+          onVimEnabledChange={onVimEnabledChange}
+          showPreviewPosition={showPreviewPosition}
+          onShowPreviewPositionChange={onShowPreviewPositionChange}
+          autoScrollEnabled={autoScrollEnabled}
+          onAutoScrollEnabledChange={onAutoScrollEnabledChange}
+        />
       </div>
     </header>
   )

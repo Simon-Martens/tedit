@@ -1,7 +1,7 @@
 export type IconName =
   | 'open' | 'save' | 'download' | 'file' | 'plus' | 'close' | 'expand' | 'collapse'
   | 'previous' | 'next' | 'zoomIn' | 'zoomOut' | 'fitWidth' | 'fitPage' | 'rotate' | 'print'
-  | 'settings'
+  | 'settings' | 'search' | 'replace'
 
 export function Icon({ name }: { name: IconName }) {
   const paths = {
@@ -22,6 +22,8 @@ export function Icon({ name }: { name: IconName }) {
     rotate: <path d="M19 8V4m0 0h-4m4 0-3 3a7 7 0 1 0 1.5 7.5" />,
     print: <path d="M7 9V4h10v5M7 17H5a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-2M7 14h10v6H7z" />,
     settings: <path d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Zm0-5 1 2.2 2.4.7 2-1.2 1.4 1.4-1.2 2 .7 2.4 2.2 1v2l-2.2 1-.7 2.4 1.2 2-1.4 1.4-2-1.2-2.4.7-1 2.2h-2l-1-2.2-2.4-.7-2 1.2-1.4-1.4 1.2-2-.7-2.4-2.2-1v-2l2.2-1 .7-2.4-1.2-2 1.4-1.4 2 1.2 2.4-.7 1-2.2h2Z" />,
+    search: <path d="M10.5 4.5a6 6 0 1 0 0 12 6 6 0 0 0 0-12Zm4.3 10.3L20 20" />,
+    replace: <path d="M4 7h13m-3-3 3 3-3 3m6 7H7m3-3-3 3 3 3" />,
   }
 
   return (

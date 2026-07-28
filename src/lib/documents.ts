@@ -78,6 +78,7 @@ export function createDocument(input?: {
   fileHandle?: EditorDocument['fileHandle']
   source?: string
   repoCommit?: string
+  repoName?: string
 }): EditorDocument {
   return {
     id: crypto.randomUUID(),
@@ -88,6 +89,7 @@ export function createDocument(input?: {
     sourceRevision: 0,
     isDirty: false,
     repoCommit: input?.repoCommit,
+    repoName: input?.repoName,
     fallbackUuid: crypto.randomUUID(),
     compileState: 'loading',
     messages: ['Initializing Typst compiler...'],

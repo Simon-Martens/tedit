@@ -2,22 +2,38 @@ import { useEffect, useRef, useState } from 'react'
 import { TabBar } from './components/TabBar'
 import { Toolbar } from './components/Toolbar'
 import { Workspace } from './components/Workspace'
+import { Icon } from './components/Icon'
 import { useTypstCompilation } from './hooks/useTypstCompilation'
 import { useSourcePreviewSync } from './hooks/useSourcePreviewSync'
 import { createDocument, createPdfFilename, formatError } from './lib/documents'
 import type { EditorDocument, WritableFileHandle } from './types'
 
+function browserSetting(key: string, fallback: boolean) {
+  const value = localStorage.getItem(key)
+  return value === null ? fallback : value === 'true'
+}
+
 function App() {
-  const [documents, setDocuments] = useState<EditorDocument[]>(() => [createDocument()])
-  const [activeId, setActiveId] = useState(() => documents[0].id)
-  const [inactiveDocument] = useState(() => createDocument())
-  const [vimEnabled, setVimEnabled] = useState(() => localStorage.getItem('typst-edit.vim-mode') === 'true')
+  const [documents, setDocuments] = useState<EditorDocument[]>([])
+  const [activeId, setActiveId] = useState('')
+  const [vimEnabled, setVimEnabled] = useState(() => (
+    window.typstDesktop ? false : browserSetting('tedit.vim-mode', false)
+  ))
+  const [showPreviewPosition, setShowPreviewPosition] = useState(() => (
+    window.typstDesktop ? false : browserSetting('tedit.show-preview-position', false)
+  ))
+  const [autoScrollEnabled, setAutoScrollEnabled] = useState(() => (
+    window.typstDesktop ? true : browserSetting('tedit.autoscroll', true)
+  ))
+  const [sessionRestored, setSessionRestored] = useState(() => !window.typstDesktop)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const documentsRef = useRef(documents)
   documentsRef.current = documents
 
   const activeDocument = documents.find(({ id }) => id === activeId) ?? documents[0]
-  const compilationDocument = activeDocument ?? inactiveDocument
+  const sessionFilePaths = documents.flatMap(({ filePath }) => filePath ? [filePath] : [])
+  const sessionKey = sessionFilePaths.join('\0')
+  const activeFilePath = activeDocument?.filePath
 
   const updateDocument = (id: string, update: Partial<EditorDocument>) => {
     setDocuments((current) => current.map((document) => (
@@ -25,12 +41,84 @@ function App() {
     )))
   }
 
-  useTypstCompilation(compilationDocument, updateDocument)
-  const sourcePreviewSync = useSourcePreviewSync(compilationDocument)
+  useTypstCompilation(activeDocument, updateDocument)
+  const sourcePreviewSync = useSourcePreviewSync(activeDocument)
 
   useEffect(() => {
-    localStorage.setItem('typst-edit.vim-mode', String(vimEnabled))
+    if (window.typstDesktop) return
+    localStorage.setItem('tedit.vim-mode', String(vimEnabled))
   }, [vimEnabled])
+
+  useEffect(() => {
+    if (window.typstDesktop) return
+    localStorage.setItem('tedit.show-preview-position', String(showPreviewPosition))
+  }, [showPreviewPosition])
+
+  useEffect(() => {
+    if (window.typstDesktop) return
+    localStorage.setItem('tedit.autoscroll', String(autoScrollEnabled))
+  }, [autoScrollEnabled])
+
+  useEffect(() => {
+    window.typstDesktop?.getSettings().then((settings) => {
+      setVimEnabled(settings.vimEnabled)
+      setShowPreviewPosition(settings.showPreviewPosition)
+      setAutoScrollEnabled(settings.autoScrollEnabled)
+    }).catch(() => undefined)
+  }, [])
+
+  useEffect(() => {
+    const desktop = window.typstDesktop
+    if (!desktop) return
+    desktop.restoreSession().then((restored) => {
+      if (!restored.documents.length) return
+      const nextDocuments = restored.documents.map((document) => createDocument({
+        fileName: document.name,
+        filePath: document.filePath,
+        source: document.content,
+        repoCommit: document.commit,
+        repoName: document.repoName,
+      }))
+      for (const document of documentsRef.current) {
+        if (document.pdfUrl) URL.revokeObjectURL(document.pdfUrl)
+      }
+      setDocuments(nextDocuments)
+      setActiveId(
+        nextDocuments.find(({ filePath }) => filePath === restored.activeFilePath)?.id
+          ?? nextDocuments[0].id,
+      )
+    }).catch(() => undefined).finally(() => setSessionRestored(true))
+  }, [])
+
+  useEffect(() => {
+    if (!sessionRestored || !window.typstDesktop) return
+    void window.typstDesktop.saveSession({
+      filePaths: sessionFilePaths,
+      activeFilePath,
+    }).catch(() => undefined)
+  }, [sessionRestored, sessionKey, activeFilePath])
+
+  useEffect(() => {
+    const fileTitle = activeDocument
+      ? [activeDocument.repoName, activeDocument.fileName].filter(Boolean).join(' / ')
+      : undefined
+    window.document.title = fileTitle ? `${fileTitle} - tedit` : 'tedit'
+  }, [activeDocument?.fileName, activeDocument?.repoName])
+
+  const changeVimEnabled = (enabled: boolean) => {
+    setVimEnabled(enabled)
+    void window.typstDesktop?.updateSettings({ vimEnabled: enabled }).catch(() => undefined)
+  }
+
+  const changeShowPreviewPosition = (enabled: boolean) => {
+    setShowPreviewPosition(enabled)
+    void window.typstDesktop?.updateSettings({ showPreviewPosition: enabled }).catch(() => undefined)
+  }
+
+  const changeAutoScrollEnabled = (enabled: boolean) => {
+    setAutoScrollEnabled(enabled)
+    void window.typstDesktop?.updateSettings({ autoScrollEnabled: enabled }).catch(() => undefined)
+  }
 
   useEffect(() => {
     return () => {
@@ -78,6 +166,7 @@ function App() {
           filePath: opened.filePath,
           source: opened.content,
           repoCommit: opened.commit,
+          repoName: opened.repoName,
         }))
       } catch (error) {
         showDocumentError(`Could not open file: ${formatError(error)}`)
@@ -117,6 +206,7 @@ function App() {
           fileName: saved.name,
           filePath: saved.filePath,
           repoCommit: saved.commit,
+          repoName: saved.repoName,
           isDirty: false,
           messages: [`Saved ${saved.name}`, ...document.messages.slice(0, 3)],
         })
@@ -168,6 +258,19 @@ function App() {
     if (id === activeId) setActiveId(remaining[Math.min(index, remaining.length - 1)].id)
   }
 
+  const reorderDocuments = (draggedId: string, targetId: string, after: boolean) => {
+    setDocuments((current) => {
+      const draggedIndex = current.findIndex(({ id }) => id === draggedId)
+      const targetIndex = current.findIndex(({ id }) => id === targetId)
+      if (draggedIndex < 0 || targetIndex < 0 || draggedIndex === targetIndex) return current
+      const next = [...current]
+      const [dragged] = next.splice(draggedIndex, 1)
+      const adjustedTargetIndex = next.findIndex(({ id }) => id === targetId)
+      next.splice(adjustedTargetIndex + (after ? 1 : 0), 0, dragged)
+      return next
+    })
+  }
+
   useEffect(() => {
     const handleShortcut = (event: KeyboardEvent) => {
       if (!(event.ctrlKey || event.metaKey)) return
@@ -210,7 +313,11 @@ function App() {
         onOpen={() => void openFile()}
         onSave={() => void saveFile()}
         vimEnabled={vimEnabled}
-        onVimEnabledChange={setVimEnabled}
+        onVimEnabledChange={changeVimEnabled}
+        showPreviewPosition={showPreviewPosition}
+        onShowPreviewPositionChange={changeShowPreviewPosition}
+        autoScrollEnabled={autoScrollEnabled}
+        onAutoScrollEnabledChange={changeAutoScrollEnabled}
       />
       <TabBar
         documents={documents}
@@ -218,6 +325,7 @@ function App() {
         onActivate={setActiveId}
         onClose={closeDocument}
         onNew={() => addDocument(createDocument())}
+        onReorder={reorderDocuments}
       />
       {activeDocument ? (
         <Workspace
@@ -232,11 +340,17 @@ function App() {
           sourceCursorLocation={sourcePreviewSync.sourceCursorLocation}
           sourceSyncStatus={sourcePreviewSync.status}
           onCursorPositionChange={sourcePreviewSync.locate}
+          showPreviewPosition={showPreviewPosition}
+          autoScrollEnabled={autoScrollEnabled}
         />
       ) : (
         <section className="workspace-empty">
           <strong>No document open</strong>
-          <span>Open a Typst file or create a new tab.</span>
+          <span>Open an existing Typst file or create a new document.</span>
+          <button type="button" className="empty-create" onClick={() => addDocument(createDocument())}>
+            <Icon name="plus" />
+            <span>Create document</span>
+          </button>
         </section>
       )}
     </main>

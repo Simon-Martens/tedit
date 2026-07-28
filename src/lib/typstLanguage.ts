@@ -1,7 +1,7 @@
 import type { BeforeMount } from '@monaco-editor/react'
 
 export const configureTypstLanguage: BeforeMount = (monaco) => {
-  if (monaco.languages.getLanguages().some(({ id }) => id === 'typst')) return
+  if (monaco.languages.getLanguages().some(({ id }: { id: string }) => id === 'typst')) return
 
   monaco.languages.register({ id: 'typst', extensions: ['.typ'] })
   monaco.languages.setMonarchTokensProvider('typst', {

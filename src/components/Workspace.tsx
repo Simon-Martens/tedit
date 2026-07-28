@@ -22,6 +22,8 @@ export function Workspace({
   sourceCursorLocation,
   sourceSyncStatus,
   onCursorPositionChange,
+  showPreviewPosition,
+  autoScrollEnabled,
 }: {
   document: EditorDocument
   onSourceChange(value: string): void
@@ -30,6 +32,8 @@ export function Workspace({
   sourceCursorLocation?: SourceCursorLocation
   sourceSyncStatus: SourceSyncStatus
   onCursorPositionChange(location: SourceCursorLocation): void
+  showPreviewPosition: boolean
+  autoScrollEnabled: boolean
 }) {
   const [leftPanePercent, setLeftPanePercent] = useState(50)
   const [sourcePanePercent, setSourcePanePercent] = useState(67)
@@ -138,6 +142,8 @@ export function Workspace({
         positions={previewPositions}
         sourceCursorLocation={sourceCursorLocation}
         sourceSyncStatus={sourceSyncStatus}
+        showPreviewPosition={showPreviewPosition}
+        autoScrollEnabled={autoScrollEnabled}
         key={document.id}
       />
     </section>

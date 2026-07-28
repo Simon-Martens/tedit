@@ -3,6 +3,7 @@ import Editor, { type OnMount } from '@monaco-editor/react'
 import { initVimMode, type VimAdapterInstance } from 'monaco-vim'
 import { configureTypstLanguage } from '../lib/typstLanguage'
 import type { EditorDocument, SourceCursorLocation } from '../types'
+import { Icon } from './Icon'
 
 function findRenderableOffset(text: string, preferredOffset: number) {
   for (const link of text.matchAll(/#link\s*\([^)]*\)\s*\[([^\]]*)\]/g)) {
@@ -52,12 +53,27 @@ export function SourcePane({
   const vimAdapterRef = useRef<VimAdapterInstance | null>(null)
   const cursorListenerRef = useRef<{ dispose(): void } | null>(null)
   const mouseListenerRef = useRef<{ dispose(): void } | null>(null)
+  const findActionRef = useRef<{ dispose(): void } | null>(null)
   const cursorCallbackRef = useRef(onCursorPositionChange)
   cursorCallbackRef.current = onCursorPositionChange
 
   const initializeVim = (editor: Parameters<OnMount>[0]) => {
     vimAdapterRef.current?.dispose()
     vimAdapterRef.current = initVimMode(editor, vimStatusRef.current)
+  }
+
+  const openFind = () => {
+    const editor = editorRef.current
+    if (!editor) return
+    editor.focus()
+    void editor.getAction('actions.find')?.run()
+  }
+
+  const openReplace = () => {
+    const editor = editorRef.current
+    if (!editor) return
+    editor.focus()
+    void editor.getAction('editor.action.startFindReplaceAction')?.run()
   }
 
   useEffect(() => {
@@ -81,19 +97,47 @@ export function SourcePane({
       vimAdapterRef.current?.dispose()
       cursorListenerRef.current?.dispose()
       mouseListenerRef.current?.dispose()
+      findActionRef.current?.dispose()
     }
   }, [])
 
   return (
     <div className={vimEnabled ? 'source-panel vim-enabled' : 'source-panel'}>
-      <div className="panel-heading">
-        <span>Source</span>
-        <span className="panel-meta">Typst</span>
+      <div className="panel-heading source-heading">
+        <span className="source-title">Source</span>
+        <span className="source-actions">
+          <span className="panel-meta">Typst</span>
+          <button
+            type="button"
+            className="source-search"
+            title="Find (Ctrl/Cmd+F)"
+            aria-label="Find in source"
+            onClick={openFind}
+          >
+            <Icon name="search" />
+          </button>
+          <button
+            type="button"
+            className="source-search"
+            title="Find and replace"
+            aria-label="Find and replace in source"
+            onClick={openReplace}
+          >
+            <Icon name="replace" />
+          </button>
+        </span>
       </div>
       <div className="editor-wrap">
         <Editor
-          onMount={(editor) => {
+          onMount={(editor, monaco) => {
             editorRef.current = editor
+            findActionRef.current?.dispose()
+            findActionRef.current = editor.addAction({
+              id: 'tedit.find',
+              label: 'Find',
+              keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyF],
+              run: () => editor.getAction('actions.find')?.run(),
+            })
             editor.layout()
             if (vimEnabled) initializeVim(editor)
             cursorListenerRef.current?.dispose()
@@ -140,7 +184,7 @@ export function SourcePane({
           }}
           beforeMount={configureTypstLanguage}
           language="typst"
-          path={`typst-edit://${document.id}.typ`}
+          path={`tedit://${document.id}.typ`}
           value={document.source}
           onChange={(value) => onChange(value ?? '')}
           theme="vs-dark"

@@ -1,4 +1,4 @@
-# Typst Edit
+# tedit
 
 An Electron desktop application for editing Typst documents with Monaco, live compiler diagnostics, tabs, and a synchronized PDF preview.
 
@@ -19,11 +19,13 @@ npm run dist
 
 Installers are written to `release/`. Use `npm run build` when you only need to validate the renderer production build.
 
+The desktop app stores its open-file session in the operating system cache directory. On restart, existing files are reopened in their previous tab order and the active tab is restored; missing files are skipped.
+
 The Typst compiler runs in the Electron renderer through WebAssembly. Font families referenced by Typst `font:` settings are loaded from the operating system; bundled Libertinus text fonts and New Computer Modern Math remain available as offline fallbacks.
 
 ## Source synchronization
 
-For saved documents, Typst Edit runs a Tinymist preview sidecar to map Monaco cursor positions to PDF page coordinates. The current editing location is scrolled into view and highlighted without replacing the PDF.js renderer.
+For saved documents, tedit runs a Tinymist preview sidecar to map Monaco cursor positions to PDF page coordinates. The current editing location is scrolled into view and highlighted without replacing the PDF.js renderer.
 
 Tinymist is resolved in this order:
 

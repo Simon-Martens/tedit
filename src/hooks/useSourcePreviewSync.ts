@@ -7,14 +7,15 @@ const DISABLED_STATUS: SourceSyncStatus = {
   message: 'Save the document to enable source synchronization.',
 }
 
-export function useSourcePreviewSync(document: EditorDocument) {
+export function useSourcePreviewSync(document: EditorDocument | undefined) {
   const [positions, setPositions] = useState<PreviewPosition[]>([])
   const [sourceCursorLocation, setSourceCursorLocation] = useState<SourceCursorLocation>()
   const [status, setStatus] = useState<SourceSyncStatus>(DISABLED_STATUS)
   const lastLocationRef = useRef<SourceCursorLocation | undefined>(undefined)
   const requestIdRef = useRef(0)
   const fallbackTimerRef = useRef<number | undefined>(undefined)
-  const canLocate = status.state === 'ready'
+  const canLocate = document !== undefined
+    && status.state === 'ready'
     && document.compileState === 'success'
     && document.attemptedRevision === document.sourceRevision
   const canLocateRef = useRef(canLocate)
@@ -26,6 +27,10 @@ export function useSourcePreviewSync(document: EditorDocument) {
     setSourceCursorLocation(undefined)
     requestIdRef.current = 0
     setPositions([])
+    if (!document) {
+      setStatus(DISABLED_STATUS)
+      return
+    }
     setStatus({ documentId: document.id, state: 'starting', message: 'Starting source synchronization...' })
     if (!desktop || !document.filePath) {
       setStatus({ ...DISABLED_STATUS, documentId: document.id })
@@ -61,20 +66,20 @@ export function useSourcePreviewSync(document: EditorDocument) {
       removeStatusListener()
       desktop.stopSourceSync()
     }
-  }, [document.id, document.filePath])
+  }, [document?.id, document?.filePath])
 
   useEffect(() => {
-    if (!window.typstDesktop || !document.filePath) return
+    if (!window.typstDesktop || !document?.filePath) return
     window.typstDesktop.updateSourceSync({ documentId: document.id, source: document.source })
-  }, [document.id, document.filePath, document.sourceRevision])
+  }, [document?.id, document?.filePath, document?.sourceRevision])
 
   useEffect(() => {
-    if (
+    if (document && (
       status.state === 'ready'
       && document.compileState === 'success'
       && document.attemptedRevision === document.sourceRevision
       && lastLocationRef.current
-    ) {
+    )) {
       requestIdRef.current += 1
       window.typstDesktop?.locateSource({
         documentId: document.id,
@@ -82,7 +87,7 @@ export function useSourcePreviewSync(document: EditorDocument) {
         ...lastLocationRef.current.lookup,
       })
     }
-  }, [document.id, document.compileState, document.attemptedRevision, document.sourceRevision, status.state])
+  }, [document?.id, document?.compileState, document?.attemptedRevision, document?.sourceRevision, status.state])
 
   const locate = (location: SourceCursorLocation) => {
     lastLocationRef.current = location
@@ -93,7 +98,7 @@ export function useSourcePreviewSync(document: EditorDocument) {
     fallbackTimerRef.current = window.setTimeout(() => {
       if (requestIdRef.current === requestId) setPositions([])
     }, 120)
-    if (!window.typstDesktop || !canLocate) return
+    if (!window.typstDesktop || !canLocate || !document) return
     if (!canLocateRef.current) return
     window.typstDesktop.locateSource({
       documentId: document.id,

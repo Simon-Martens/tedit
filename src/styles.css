@@ -1,4 +1,5 @@
 @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
+@import '../node_modules/monaco-editor/esm/vs/base/browser/ui/codicons/codicon/codicon.css';
 
 :root {
   color: #e8e9e3;
@@ -33,7 +34,7 @@ a:focus-visible {
 
 .app-shell {
   display: grid;
-  grid-template-rows: 44px 34px minmax(0, 1fr);
+  grid-template-rows: 44px 32px minmax(0, 1fr);
   height: 100%;
   background: #11120f;
 }
@@ -54,6 +55,36 @@ a:focus-visible {
 
 .workspace-empty span {
   font-size: 11px;
+}
+
+.workspace-empty .empty-create {
+  display: inline-flex;
+  height: 30px;
+  align-items: center;
+  justify-self: center;
+  gap: 6px;
+  margin-top: 8px;
+  padding: 0 11px;
+  border: 1px solid #82933f;
+  border-radius: 6px;
+  color: #161810;
+  background: #d9fa66;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.workspace-empty .empty-create:hover {
+  background: #e4ff83;
+}
+
+.workspace-empty .empty-create svg {
+  width: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.7;
 }
 
 .topbar {
@@ -141,9 +172,32 @@ a:focus-visible {
   border-right: 1px solid #2c2e28;
   color: #8f9288;
   background: #181915;
-  cursor: pointer;
+  cursor: grab;
   font-size: 10px;
   text-align: left;
+}
+
+.document-tab.dragging {
+  opacity: 0.45;
+  cursor: grabbing;
+}
+
+.document-tab.drop-before::before,
+.document-tab.drop-after::before {
+  position: absolute;
+  z-index: 2;
+  top: 3px;
+  bottom: 3px;
+  left: -1px;
+  width: 2px;
+  border-radius: 1px;
+  content: '';
+  background: #d9fa66;
+}
+
+.document-tab.drop-after::before {
+  right: -1px;
+  left: auto;
 }
 
 .document-tab::after {
@@ -410,7 +464,11 @@ a:focus-visible {
 }
 
 .source-panel.vim-enabled {
-  grid-template-rows: 31px minmax(0, 1fr) 24px;
+  grid-template-rows: 32px minmax(0, 1fr) 24px;
+}
+
+.source-panel {
+  grid-template-rows: 32px minmax(0, 1fr);
 }
 
 .pane-resizer {
@@ -529,6 +587,12 @@ a:focus-visible {
   min-height: 0;
   overflow: hidden;
   background: #1e1e1e;
+}
+
+.workbench-hover-container,
+.workbench-hover-pointer {
+  display: none !important;
+  pointer-events: none !important;
 }
 
 .editor-wrap > section {
@@ -650,6 +714,46 @@ a:focus-visible {
   background: #1a1b17;
 }
 
+.source-heading {
+  padding-right: 4px;
+  background: #1a1b17;
+}
+
+.source-actions {
+  display: flex;
+  height: 100%;
+  align-items: center;
+  gap: 7px;
+}
+
+.source-search {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  place-items: center;
+  color: #92958b;
+  background: transparent;
+  cursor: pointer;
+}
+
+.source-search:hover {
+  color: #eff0eb;
+  background: #2c2e27;
+}
+
+.source-search svg {
+  width: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.7;
+}
+
+.source-title,
 .preview-title {
   display: flex;
   height: 100%;
@@ -815,11 +919,23 @@ a:focus-visible {
 .pdf-page-row {
   display: grid;
   width: max-content;
-  grid-template-columns: 18px auto;
+  grid-template-columns: 14px auto;
 }
 
 .pdf-page-gutter {
-  width: 18px;
+  width: 14px;
+}
+
+.pdf-pages.position-hidden .pdf-page-row {
+  grid-template-columns: 0 auto;
+}
+
+.pdf-pages.position-hidden .pdf-page-gutter {
+  width: 0;
+}
+
+.pdf-pages.position-hidden .pdf-location-marker {
+  display: none;
 }
 
 .pdf-page-canvas {
@@ -833,24 +949,19 @@ a:focus-visible {
 .pdf-location-marker {
   position: absolute;
   z-index: 4;
-  display: grid;
-  width: 16px;
-  height: 16px;
-  place-items: center;
+  width: 14px;
+  height: 14px;
+  box-sizing: border-box;
+  border: 2px solid #86152b;
+  border-radius: 50%;
+  background: #ff3658;
   opacity: 0;
-  color: #ff3658;
   filter:
     drop-shadow(0.5px 1px 1px hsl(347deg 55% 20% / 35%))
     drop-shadow(1px 2px 2px hsl(347deg 55% 20% / 18%));
   pointer-events: none;
   transform: translate(-50%, -50%);
   transition: top 100ms ease-out, left 100ms ease-out;
-}
-
-.pdf-location-marker svg {
-  width: 16px;
-  height: 16px;
-  fill: currentColor;
 }
 
 .pdf-location-marker.visible {

@@ -14,12 +14,25 @@ export interface DesktopDocument {
   name: string
   content: string
   commit?: string
+  repoName?: string
 }
 
 export interface DesktopFileMetadata {
   filePath: string
   name: string
   commit?: string
+  repoName?: string
+}
+
+export interface AppSettings {
+  vimEnabled: boolean
+  showPreviewPosition: boolean
+  autoScrollEnabled: boolean
+}
+
+export interface DesktopSession {
+  documents: DesktopDocument[]
+  activeFilePath?: string
 }
 
 export interface DesktopApi {
@@ -35,6 +48,10 @@ export interface DesktopApi {
   stopSourceSync(): void
   onSourceJump(listener: (jump: SourceJump) => void): () => void
   onSourceSyncStatus(listener: (status: SourceSyncStatus) => void): () => void
+  getSettings(): Promise<AppSettings>
+  updateSettings(settings: Partial<AppSettings>): Promise<AppSettings>
+  restoreSession(): Promise<DesktopSession>
+  saveSession(session: { filePaths: string[]; activeFilePath?: string }): Promise<void>
 }
 
 export interface PreviewPosition {
@@ -75,6 +92,7 @@ export interface EditorDocument {
   attemptedRevision?: number
   isDirty: boolean
   repoCommit?: string
+  repoName?: string
   fallbackUuid: string
   compileState: CompilationState
   messages: string[]

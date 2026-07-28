@@ -7,7 +7,6 @@ import {
   type RenderTask,
 } from 'pdfjs-dist'
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
-import { RiArrowRightFill } from '@remixicon/react'
 import { createPdfFilename } from '../lib/documents'
 import type { EditorDocument, PreviewPosition, SourceCursorLocation, SourceSyncStatus } from '../types'
 import { PdfToolbar, type PdfZoom } from './PdfToolbar'
@@ -128,11 +127,15 @@ export function PdfPreview({
   positions,
   sourceCursorLocation,
   sourceSyncStatus,
+  showPreviewPosition,
+  autoScrollEnabled,
 }: {
   document: EditorDocument
   positions: PreviewPosition[]
   sourceCursorLocation?: SourceCursorLocation
   sourceSyncStatus: SourceSyncStatus
+  showPreviewPosition: boolean
+  autoScrollEnabled: boolean
 }) {
   const [pdf, setPdf] = useState<PDFDocumentProxy>()
   const [displayedUrl, setDisplayedUrl] = useState<string>()
@@ -226,7 +229,7 @@ export function PdfPreview({
       const container = viewportRef.current
       if (!container || version !== renderVersionRef.current) return
 
-      const availableWidth = Math.max(100, container.clientWidth - 30)
+      const availableWidth = Math.max(100, container.clientWidth - (showPreviewPosition ? 30 : 16))
       const availableHeight = Math.max(100, container.clientHeight - 12)
       const pixelRatio = Math.min(window.devicePixelRatio || 1, 2)
       const nextPages = window.document.createDocumentFragment()
@@ -306,7 +309,7 @@ export function PdfPreview({
       if (error instanceof Error && error.name === 'RenderingCancelledException') return
     })
     return () => renderTaskRef.current?.cancel()
-  }, [pdf, zoom, rotation, sizeVersion, document.pdfUrl])
+  }, [pdf, zoom, rotation, sizeVersion, document.pdfUrl, showPreviewPosition])
 
   useEffect(() => {
     textTokensRef.current.clear()
@@ -353,11 +356,13 @@ export function PdfPreview({
         const pageWidth = Number(canvas.dataset.pageWidth)
         const scale = canvas.clientWidth / pageWidth
         const top = canvas.offsetTop + Math.max(0, y - 3) * scale
-        marker.style.left = `${canvas.offsetLeft - 9}px`
+        marker.style.left = `${canvas.offsetLeft - 11}px`
         marker.style.top = `${top}px`
         marker.classList.add('visible')
-        viewport.scrollTo({ top: Math.max(0, top - viewport.clientHeight * 0.35), behavior: 'smooth' })
-        setPageNumber(page)
+        if (autoScrollEnabled) {
+          viewport.scrollTo({ top: Math.max(0, top - viewport.clientHeight * 0.35), behavior: 'smooth' })
+          setPageNumber(page)
+        }
       }).catch(() => undefined)
       return () => {
         cancelled = true
@@ -383,13 +388,15 @@ export function PdfPreview({
       else if (rotation === 180) y = pageHeight - unrotatedY
       else if (rotation === 270) y = pageWidth - position.x
 
-      const left = canvas.offsetLeft - 9
+      const left = canvas.offsetLeft - 11
       const top = canvas.offsetTop + Math.max(0, y - 3) * scale
       marker.style.left = `${left}px`
       marker.style.top = `${top}px`
       marker.classList.add('visible')
-      viewport.scrollTo({ top: Math.max(0, top - viewport.clientHeight * 0.35), behavior: 'smooth' })
-      setPageNumber(position.page)
+      if (autoScrollEnabled) {
+        viewport.scrollTo({ top: Math.max(0, top - viewport.clientHeight * 0.35), behavior: 'smooth' })
+        setPageNumber(position.page)
+      }
     }
 
     placeMarker(position.y)
@@ -418,7 +425,7 @@ export function PdfPreview({
     return () => {
       cancelled = true
     }
-  }, [positions, sourceCursorLocation, displayedUrl, document.pdfUrl, document.sourceRevision, rotation, renderedVersion, pdf])
+  }, [positions, sourceCursorLocation, displayedUrl, document.pdfUrl, document.sourceRevision, rotation, renderedVersion, pdf, autoScrollEnabled])
 
   useEffect(() => {
     return () => {
@@ -488,11 +495,9 @@ export function PdfPreview({
         />
       </div>
       <div className="preview-surface pdf-canvas-viewport" ref={viewportRef} onScroll={trackVisiblePage}>
-        <div ref={pagesRef} className="pdf-pages">
+        <div ref={pagesRef} className={`pdf-pages ${showPreviewPosition ? '' : 'position-hidden'}`}>
           <div ref={pageStackRef} className="pdf-page-stack" />
-          <div ref={locationMarkerRef} className="pdf-location-marker">
-            <RiArrowRightFill aria-hidden="true" />
-          </div>
+          <div ref={locationMarkerRef} className="pdf-location-marker" aria-hidden="true" />
         </div>
         {!displayedUrl && (
           <div className="preview-empty">

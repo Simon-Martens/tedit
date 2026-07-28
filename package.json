@@ -1,10 +1,11 @@
 {
-  "name": "typst-edit",
+  "name": "tedit",
   "description": "A desktop Typst editor with live PDF preview.",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.1.0-alpha.1",
   "type": "module",
   "main": "electron/main.cjs",
+  "desktopName": "tedit.desktop",
   "scripts": {
     "dev": "concurrently --kill-others \"npm:dev:renderer\" \"npm:dev:electron\"",
     "dev:renderer": "vite",
@@ -20,7 +21,7 @@
     "@myriaddreamin/typst.ts": "^0.7.0",
     "@remixicon/react": "^4.9.0",
     "extract-zip": "^2.0.1",
-    "monaco-editor": "^0.52.2",
+    "monaco-editor": "^0.56.0",
     "monaco-vim": "^0.4.4",
     "pdfjs-dist": "^6.1.200",
     "react": "^19.2.0",
@@ -32,18 +33,19 @@
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "@types/ws": "^8.18.1",
-    "@vitejs/plugin-react": "^5.0.0",
+    "@vitejs/plugin-react": "^6.0.4",
     "concurrently": "^10.0.4",
     "cross-env": "^10.0.0",
     "electron": "^43.2.0",
     "electron-builder": "^26.15.3",
-    "typescript": "~5.9.3",
+    "typescript": "^7.0.2",
     "vite": "^8.1.5",
     "wait-on": "^9.1.0"
   },
   "build": {
-    "appId": "dev.typstedit.app",
-    "productName": "Typst Edit",
+    "appId": "dev.tedit.app",
+    "productName": "tedit",
+    "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
     "asar": true,
     "directories": {
       "output": "release"
@@ -56,6 +58,7 @@
       "package.json"
     ],
     "linux": {
+      "syncDesktopName": true,
       "target": [
         "AppImage"
       ],

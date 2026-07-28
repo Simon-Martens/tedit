@@ -101,7 +101,7 @@ function getCompiler(source: string) {
 }
 
 export function useTypstCompilation(
-  document: EditorDocument,
+  document: EditorDocument | undefined,
   updateDocument: (id: string, update: Partial<EditorDocument>) => void,
 ) {
   const updateRef = useRef(updateDocument)
@@ -109,6 +109,7 @@ export function useTypstCompilation(
   updateRef.current = updateDocument
 
   useEffect(() => {
+    if (!document) return
     if (document.attemptedRevision === document.sourceRevision) return
     const version = ++versionRef.current
 
@@ -189,5 +190,5 @@ export function useTypstCompilation(
       window.clearTimeout(timeout)
       versionRef.current += 1
     }
-  }, [document.id, document.sourceRevision])
+  }, [document?.id, document?.sourceRevision])
 }

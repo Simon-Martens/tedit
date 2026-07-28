@@ -17,4 +17,8 @@ contextBridge.exposeInMainWorld('typstDesktop', {
     ipcRenderer.on('tinymist:status', handler)
     return () => ipcRenderer.removeListener('tinymist:status', handler)
   },
+  getSettings: () => ipcRenderer.invoke('settings:get'),
+  updateSettings: (settings) => ipcRenderer.invoke('settings:update', settings),
+  restoreSession: () => ipcRenderer.invoke('session:restore'),
+  saveSession: (session) => ipcRenderer.invoke('session:save', session),
 })
