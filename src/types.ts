@@ -48,6 +48,19 @@ export interface PreviewRoot {
   relativePath: string
 }
 
+export interface WatchHealthStatus {
+  state: 'disabled' | 'ready' | 'degraded' | 'error'
+  message: string
+  watchedDirectories: number
+  requestedDirectories: number
+  truncated?: boolean
+}
+
+export interface PreviewRootDiscoveryResult {
+  roots: PreviewRoot[]
+  status: WatchHealthStatus
+}
+
 export interface AppSettings {
   vimEnabled: boolean
   showPreviewPosition: boolean
@@ -69,7 +82,8 @@ export interface DesktopApi {
     content: string
     expectedDiskVersion?: string | null
   }): Promise<DesktopFileMetadata | DesktopFileChange | null>
-  watchDocuments(filePaths: string[]): Promise<void>
+  watchDocuments(filePaths: string[]): Promise<WatchHealthStatus>
+  onDocumentWatchStatus(listener: (status: WatchHealthStatus) => void): () => void
   onDocumentChange(listener: (change: DesktopFileChange) => void): () => void
   resolveDocumentConflict(request: {
     name: string
@@ -87,10 +101,11 @@ export interface DesktopApi {
   discoverPreviewRoots(request: {
     filePath: string
     openDocuments: Array<{ filePath: string; source: string }>
-  }): Promise<PreviewRoot[]>
+  }): Promise<PreviewRootDiscoveryResult>
   onPreviewRootsChanged(listener: (update: {
     filePath: string
     roots: PreviewRoot[]
+    status: WatchHealthStatus
   }) => void): () => void
   stopPreviewRootDiscovery(): void
   startSourceSync(request: {

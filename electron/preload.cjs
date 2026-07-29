@@ -4,6 +4,11 @@ contextBridge.exposeInMainWorld('typstDesktop', {
   openDocument: () => ipcRenderer.invoke('document:open'),
   saveDocument: (request) => ipcRenderer.invoke('document:save', request),
   watchDocuments: (filePaths) => ipcRenderer.invoke('document:watch', filePaths),
+  onDocumentWatchStatus: (listener) => {
+    const handler = (_event, payload) => listener(payload)
+    ipcRenderer.on('document:watch-status', handler)
+    return () => ipcRenderer.removeListener('document:watch-status', handler)
+  },
   onDocumentChange: (listener) => {
     const handler = (_event, payload) => listener(payload)
     ipcRenderer.on('document:change', handler)

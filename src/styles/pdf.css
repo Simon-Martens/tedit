@@ -48,6 +48,18 @@
   background: var(--color-error);
 }
 
+.preview-discovery-indicator {
+  width: 6px;
+  height: 6px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--color-warning);
+}
+
+.preview-discovery-indicator.error {
+  background: var(--color-error);
+}
+
 .preview-root-select {
   width: auto;
   min-width: 0;
@@ -244,6 +256,10 @@
 .pdf-page-row {
   position: relative;
   width: max-content;
+  flex: 0 0 auto;
+  border-radius: 3px;
+  background: white;
+  box-shadow: 0 12px 35px rgb(0 0 0 / 30%);
   line-height: 1;
 }
 
@@ -256,7 +272,6 @@
   flex: 0 0 auto;
   border-radius: 3px;
   background: white;
-  box-shadow: 0 12px 35px rgb(0 0 0 / 30%);
 }
 
 .pdf-text-layer {
@@ -370,6 +385,37 @@
   font-size: 12px;
 }
 
+.preview-retry,
+.preview-error button {
+  padding: 4px 9px;
+  border: 1px solid #676a5e;
+  border-radius: 3px;
+  color: #d9dbd3;
+  background: #30322c;
+  font: 10px var(--font-mono);
+  cursor: pointer;
+}
+
+.preview-error {
+  position: sticky;
+  z-index: 6;
+  top: 6px;
+  display: flex;
+  width: fit-content;
+  max-width: calc(100% - 16px);
+  margin: 0 auto;
+  padding: 7px 9px;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid color-mix(in srgb, var(--color-error), transparent 35%);
+  border-radius: 4px;
+  color: #f2d7d2;
+  background: rgb(58 31 29 / 94%);
+  box-shadow: 0 5px 20px rgb(0 0 0 / 30%);
+  font-size: 11px;
+  text-align: left;
+}
+
 .loader {
   width: 27px;
   height: 27px;
@@ -433,8 +479,20 @@
   background: #f9f9f6;
 }
 
-.theme-light .pdf-page-canvas {
+.theme-light .pdf-page-row {
   box-shadow: 0 12px 35px rgb(54 58 45 / 22%);
+}
+
+.theme-light .preview-retry,
+.theme-light .preview-error button {
+  border-color: #a8aca0;
+  color: #34382f;
+  background: #f2f3ee;
+}
+
+.theme-light .preview-error {
+  color: #6e2820;
+  background: rgb(255 239 235 / 96%);
 }
 
 .theme-light .preview-empty {
@@ -469,5 +527,18 @@
 
   .pdf-toolbar-separator {
     margin: 0 1px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .preview-spinner,
+  .source-sync-indicator.installing,
+  .source-sync-indicator.starting,
+  .loader {
+    animation: none;
+  }
+
+  .pdf-location-marker {
+    transition: none;
   }
 }

@@ -5,23 +5,41 @@ const { parentPort, workerData } = require('node:worker_threads')
 const ignoredDirectories = new Set(['.git', 'dist', 'node_modules', 'release', 'target'])
 const maximumFiles = 10000
 const maximumDepth = 40
+const maximumDirectories = 1000
+const maximumWatchers = 512
+const watcherRetryDelays = [250, 500, 1000, 2000, 4000]
 
-function collectTypstFiles(directory, files, directories, depth = 0) {
-  if (files.length >= maximumFiles || depth > maximumDepth) return
+function collectTypstFiles(directory, files, directories, limits, depth = 0) {
+  if (files.length >= maximumFiles) {
+    limits.add(`file limit (${maximumFiles})`)
+    return
+  }
+  if (directories.length >= maximumDirectories) {
+    limits.add(`directory limit (${maximumDirectories})`)
+    return
+  }
+  if (depth > maximumDepth) {
+    limits.add(`depth limit (${maximumDepth})`)
+    return
+  }
   let entries
   try {
     entries = fs.readdirSync(directory, { withFileTypes: true })
   } catch (error) {
     console.warn(`[tedit:preview-discovery] Could not read directory ${directory}: ${error.message}`)
+    limits.add('unreadable directories')
     return
   }
   directories.push(directory)
   for (const entry of entries) {
-    if (files.length >= maximumFiles) return
+    if (files.length >= maximumFiles) {
+      limits.add(`file limit (${maximumFiles})`)
+      return
+    }
     const entryPath = path.join(directory, entry.name)
     if (entry.isDirectory()) {
       if (!ignoredDirectories.has(entry.name)) {
-        collectTypstFiles(entryPath, files, directories, depth + 1)
+        collectTypstFiles(entryPath, files, directories, limits, depth + 1)
       }
     } else if (entry.isFile() && entry.name.toLowerCase().endsWith('.typ')) {
       files.push(path.resolve(entryPath))
@@ -100,7 +118,8 @@ function discover() {
   ]))
   const files = []
   const directories = []
-  collectTypstFiles(rootDirectory, files, directories)
+  const limits = new Set()
+  collectTypstFiles(rootDirectory, files, directories, limits)
   if (!files.includes(currentFilePath)) files.push(currentFilePath)
   const fileSet = new Set(files)
   const reverseDependencies = new Map()
@@ -147,31 +166,93 @@ function discover() {
     if (right.filePath === currentFilePath) return 1
     return left.relativePath.localeCompare(right.relativePath)
   })
-  return { candidates, directories }
+  return { candidates, directories, limits }
 }
 
-let watchers = []
+const watchers = new Map()
+const watcherRetryTimers = new Map()
 let refreshTimer
+let maximumRefreshTimer
+let currentCandidates = []
+let currentLimits = new Set()
+let requestedWatcherCount = 0
+let discoveredDirectoryCount = 0
+
+function status() {
+  const missingWatchers = Math.max(0, requestedWatcherCount - watchers.size)
+  const limitations = [...currentLimits]
+  if (missingWatchers) limitations.push(`${missingWatchers} unavailable watcher${missingWatchers === 1 ? '' : 's'}`)
+  const degraded = limitations.length > 0
+  return {
+    state: degraded ? 'degraded' : 'ready',
+    message: degraded
+      ? `Preview-root discovery is partial: ${limitations.join(', ')}.`
+      : `Watching ${watchers.size} director${watchers.size === 1 ? 'y' : 'ies'} for preview roots.`,
+    watchedDirectories: watchers.size,
+    requestedDirectories: discoveredDirectoryCount,
+    truncated: currentLimits.size > 0,
+  }
+}
+
+function postUpdate() {
+  parentPort.postMessage({ type: 'result', roots: currentCandidates, status: status() })
+}
+
+function scheduleWatcherRetry(directory, attempt) {
+  if (attempt >= watcherRetryDelays.length || watcherRetryTimers.has(directory)) {
+    postUpdate()
+    return
+  }
+  const timer = setTimeout(() => {
+    watcherRetryTimers.delete(directory)
+    installWatcher(directory, attempt + 1)
+  }, watcherRetryDelays[attempt])
+  watcherRetryTimers.set(directory, timer)
+  postUpdate()
+}
+
+function installWatcher(directory, attempt = 0) {
+  try {
+    const watcher = fs.watch(directory, scheduleRefresh)
+    watcher.on('error', (error) => {
+      if (watchers.get(directory) !== watcher) return
+      console.warn(`[tedit:preview-discovery] Watcher failed for ${directory}: ${error.message}`)
+      watcher.close()
+      watchers.delete(directory)
+      scheduleWatcherRetry(directory, 0)
+    })
+    watchers.set(directory, watcher)
+    if (attempt > 0) postUpdate()
+  } catch (error) {
+    console.warn(`[tedit:preview-discovery] Could not watch ${directory}: ${error.message}`)
+    scheduleWatcherRetry(directory, attempt)
+  }
+}
 
 function refresh() {
-  const { candidates, directories } = discover()
-  parentPort.postMessage(candidates)
-  for (const watcher of watchers) watcher.close()
-  watchers = directories.flatMap((directory) => {
-    try {
-      const watcher = fs.watch(directory, scheduleRefresh)
-      watcher.on('error', scheduleRefresh)
-      return [watcher]
-    } catch (error) {
-      console.warn(`[tedit:preview-discovery] Could not watch ${directory}: ${error.message}`)
-      return []
-    }
-  })
+  clearTimeout(refreshTimer)
+  clearTimeout(maximumRefreshTimer)
+  refreshTimer = undefined
+  maximumRefreshTimer = undefined
+  const { candidates, directories, limits } = discover()
+  for (const watcher of watchers.values()) watcher.close()
+  watchers.clear()
+  for (const timer of watcherRetryTimers.values()) clearTimeout(timer)
+  watcherRetryTimers.clear()
+  currentCandidates = candidates
+  currentLimits = limits
+  const watchedDirectories = directories.slice(0, maximumWatchers)
+  if (directories.length > maximumWatchers) currentLimits.add(`watcher limit (${maximumWatchers})`)
+  requestedWatcherCount = watchedDirectories.length
+  discoveredDirectoryCount = directories.length
+  for (const directory of watchedDirectories) installWatcher(directory)
+  postUpdate()
 }
 
 function scheduleRefresh() {
   clearTimeout(refreshTimer)
   refreshTimer = setTimeout(refresh, 120)
+  if (!maximumRefreshTimer) maximumRefreshTimer = setTimeout(refresh, 1500)
 }
 
 refresh()

@@ -234,7 +234,8 @@ a:focus-visible {
 }
 
 .footer-tinymist-installing i,
-.footer-tinymist-starting i {
+.footer-tinymist-starting i,
+.footer-tinymist-degraded i {
   background: var(--color-compiling);
   animation: pulse 700ms infinite alternate;
 }

@@ -4,6 +4,7 @@ import {
   GlobalWorkerOptions,
   TextLayer,
   getDocument,
+  type PDFDocumentLoadingTask,
   type PDFDocumentProxy,
   type PDFPageProxy,
   type PageViewport,
@@ -12,12 +13,25 @@ import {
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import { createPdfFilename } from '../lib/documents'
 import { reportError } from '../lib/logging'
-import type { EditorDocument, PreviewPosition, PreviewRoot, SourceCursorLocation, SourceSyncStatus } from '../types'
+import type { EditorDocument, PreviewPosition, PreviewRoot, SourceCursorLocation, SourceSyncStatus, WatchHealthStatus } from '../types'
 import { PdfToolbar, type PdfZoom } from './PdfToolbar'
 
 GlobalWorkerOptions.workerSrc = pdfWorkerUrl
 
 const PDF_CSS_UNITS = 96 / 72
+const pdfLoadingTasks = new WeakMap<PDFDocumentProxy, PDFDocumentLoadingTask>()
+
+function isPdfCancellation(error: unknown) {
+  return error instanceof Error
+    && (error.name === 'RenderingCancelledException' || error.name === 'AbortException' || error.name === 'AbortError')
+}
+
+function disposePdf(pdf: PDFDocumentProxy) {
+  const loadingTask = pdfLoadingTasks.get(pdf)
+  pdfLoadingTasks.delete(pdf)
+  const disposal = loadingTask ? loadingTask.destroy() : pdf.cleanup()
+  void disposal.catch((error: unknown) => reportError('pdf-dispose', error))
+}
 
 interface TextToken {
   value: string
@@ -35,6 +49,7 @@ interface SourceSignature {
 
 interface PageRenderEntry {
   page: PDFPageProxy
+  row: HTMLDivElement
   canvas: HTMLCanvasElement
   context: CanvasRenderingContext2D
   displayViewport: PageViewport
@@ -43,6 +58,15 @@ interface PageRenderEntry {
   pageNumber: number
   renderWidth: number
   renderHeight: number
+  rendered: boolean
+  rendering: boolean
+  visible: boolean
+}
+
+interface PreviewRenderStatus {
+  state: 'idle' | 'loading' | 'rendering' | 'ready' | 'error'
+  url?: string
+  message?: string
 }
 
 const WORD_PATTERN = /[\p{L}\p{N}\p{M}_]+/gu
@@ -165,6 +189,7 @@ function compactPreviewPath(value: string, maximumLength = 48) {
 export function PdfPreview({
   document,
   previewRoots,
+  previewRootStatus,
   onPreviewRootChange,
   positions,
   sourceCursorLocation,
@@ -174,6 +199,7 @@ export function PdfPreview({
 }: {
   document: EditorDocument
   previewRoots?: PreviewRoot[]
+  previewRootStatus?: WatchHealthStatus
   onPreviewRootChange(filePath: string): void
   positions: PreviewPosition[]
   sourceCursorLocation?: SourceCursorLocation
@@ -184,24 +210,51 @@ export function PdfPreview({
   const [pdf, setPdf] = useState<PDFDocumentProxy>()
   const [loadedPdfUrl, setLoadedPdfUrl] = useState<string>()
   const [displayedUrl, setDisplayedUrl] = useState<string>()
+  const [displayedPageCount, setDisplayedPageCount] = useState(0)
   const [pageNumber, setPageNumber] = useState(1)
   const [zoom, setZoom] = useState<PdfZoom>('width')
   const [rotation, setRotation] = useState(0)
   const [renderedVersion, setRenderedVersion] = useState(0)
   const [sizeVersion, setSizeVersion] = useState(0)
   const [printing, setPrinting] = useState(false)
+  const [previewStatus, setPreviewStatus] = useState<PreviewRenderStatus>({ state: 'idle' })
+  const [retryVersion, setRetryVersion] = useState(0)
   const pagesRef = useRef<HTMLDivElement>(null)
   const pageStackRef = useRef<HTMLDivElement>(null)
   const locationMarkerRef = useRef<HTMLDivElement>(null)
   const viewportRef = useRef<HTMLDivElement>(null)
-  const renderTaskRef = useRef<RenderTask | undefined>(undefined)
-  const textLayersRef = useRef<TextLayer[]>([])
+  const renderTasksRef = useRef(new Map<number, RenderTask>())
+  const textLayersRef = useRef(new Map<number, TextLayer>())
+  const printTasksRef = useRef(new Set<RenderTask>())
+  const printFrameRef = useRef<HTMLIFrameElement | undefined>(undefined)
+  const printTimeoutRef = useRef<number | undefined>(undefined)
+  const retiredPdfsRef = useRef(new Set<PDFDocumentProxy>())
+  const printingRef = useRef(false)
+  const printGenerationRef = useRef(0)
   const renderVersionRef = useRef(0)
   const displayedUrlRef = useRef<string | undefined>(undefined)
+  const displayedPdfRef = useRef<PDFDocumentProxy | undefined>(undefined)
+  const pdfRef = useRef<PDFDocumentProxy | undefined>(undefined)
+  const loadingUrlRef = useRef<string | undefined>(undefined)
+  const documentPdfUrlRef = useRef<string | undefined>(undefined)
   const textTokensRef = useRef(new Map<number, Promise<TextToken[]>>())
   const scrollFrameRef = useRef<number | undefined>(undefined)
   const pdfFileName = createPdfFilename(document)
-  const isUpdating = document.compileState === 'compiling' || document.pdfUrl !== displayedUrl
+  pdfRef.current = pdf
+  documentPdfUrlRef.current = document.pdfUrl
+  const latestPreviewFailed = previewStatus.state === 'error' && previewStatus.url === document.pdfUrl
+  const isUpdating = document.compileState === 'compiling'
+    || previewStatus.state === 'loading'
+    || previewStatus.state === 'rendering'
+    || (document.pdfUrl !== displayedUrl && !latestPreviewFailed)
+  const retryPreview = () => {
+    setPreviewStatus({ state: 'loading', url: document.pdfUrl })
+    if (document.pdfUrl === displayedUrlRef.current) {
+      setSizeVersion((current) => current + 1)
+    } else {
+      setRetryVersion((current) => current + 1)
+    }
+  }
 
   const scrollToPage = (page: number, behavior: ScrollBehavior = 'smooth') => {
     const viewport = viewportRef.current
@@ -236,44 +289,79 @@ export function PdfPreview({
   useEffect(() => {
     const viewport = viewportRef.current
     if (!viewport) return
-    const observer = new ResizeObserver(() => setSizeVersion((current) => current + 1))
+    let timeout: number | undefined
+    let previousWidth = viewport.clientWidth
+    let previousHeight = viewport.clientHeight
+    const observer = new ResizeObserver(() => {
+      const width = viewport.clientWidth
+      const height = viewport.clientHeight
+      const sizeChanged = zoom === 'page'
+        ? width !== previousWidth || height !== previousHeight
+        : zoom === 'width' && width !== previousWidth
+      previousWidth = width
+      previousHeight = height
+      if (!sizeChanged) return
+      window.clearTimeout(timeout)
+      timeout = window.setTimeout(() => setSizeVersion((current) => current + 1), 100)
+    })
     observer.observe(viewport)
-    return () => observer.disconnect()
-  }, [])
+    return () => {
+      window.clearTimeout(timeout)
+      observer.disconnect()
+    }
+  }, [zoom])
 
   useEffect(() => {
     if (!document.pdfUrl || document.pdfUrl === displayedUrlRef.current) return
     const url = document.pdfUrl
+    const previousLoadingUrl = loadingUrlRef.current
+    if (previousLoadingUrl && previousLoadingUrl !== url && previousLoadingUrl !== displayedUrlRef.current) {
+      URL.revokeObjectURL(previousLoadingUrl)
+    }
+    loadingUrlRef.current = url
     renderVersionRef.current += 1
-    renderTaskRef.current?.cancel()
+    for (const task of renderTasksRef.current.values()) task.cancel()
+    renderTasksRef.current.clear()
+    setPreviewStatus({ state: 'loading', url })
     const loadingTask = getDocument({ url })
     let cancelled = false
+    let resolved = false
 
     loadingTask.promise.then((nextPdf) => {
+      pdfLoadingTasks.set(nextPdf, loadingTask)
       if (cancelled) {
-        void nextPdf.cleanup()
+        disposePdf(nextPdf)
         return
       }
-      setPdf((current) => {
-        if (current) void current.cleanup()
-        return nextPdf
-      })
+      resolved = true
+      const previousPdf = pdfRef.current
+      if (previousPdf && previousPdf !== displayedPdfRef.current) disposePdf(previousPdf)
+      setPdf(nextPdf)
       setLoadedPdfUrl(url)
       setPageNumber((current) => Math.min(current, nextPdf.numPages))
-    }).catch((error) => reportError('pdf-load', error))
+      setPreviewStatus({ state: 'rendering', url })
+    }).catch((error) => {
+      if (cancelled) return
+      reportError('pdf-load', error)
+      setPreviewStatus({ state: 'error', url, message: error instanceof Error ? error.message : String(error) })
+    })
 
     return () => {
       cancelled = true
-      void loadingTask.destroy()
+      if (!resolved) void loadingTask.destroy()
     }
-  }, [document.pdfUrl])
+  }, [document.pdfUrl, retryVersion])
 
   useEffect(() => {
     if (!pdf || !loadedPdfUrl || loadedPdfUrl !== document.pdfUrl) return
     const pdfUrl = loadedPdfUrl
     const version = ++renderVersionRef.current
-    renderTaskRef.current?.cancel()
-    for (const textLayer of textLayersRef.current.splice(0)) textLayer.cancel()
+    for (const task of renderTasksRef.current.values()) task.cancel()
+    renderTasksRef.current.clear()
+    for (const textLayer of textLayersRef.current.values()) textLayer.cancel()
+    textLayersRef.current.clear()
+    setPreviewStatus({ state: 'rendering', url: pdfUrl })
+    let intersectionObserver: IntersectionObserver | undefined
 
     const render = async () => {
       const container = viewportRef.current
@@ -316,6 +404,8 @@ export function PdfPreview({
         const canvas = window.document.createElement('canvas')
         canvas.className = 'pdf-page-canvas'
         canvas.dataset.page = String(index)
+        canvas.width = 0
+        canvas.height = 0
         const unrotatedViewport = page.getViewport({ scale: 1, rotation: 0 })
         canvas.dataset.pageWidth = String(unrotatedViewport.width)
         canvas.dataset.pageHeight = String(unrotatedViewport.height)
@@ -326,6 +416,8 @@ export function PdfPreview({
         const row = window.document.createElement('div')
         row.className = 'pdf-page-row'
         row.dataset.page = String(index)
+        row.style.width = `${Math.ceil(viewport.width)}px`
+        row.style.height = `${Math.ceil(viewport.height)}px`
         const textLayerContainer = window.document.createElement('div')
         textLayerContainer.className = 'pdf-text-layer'
         textLayerContainer.style.setProperty('--total-scale-factor', String(viewport.scale))
@@ -333,6 +425,7 @@ export function PdfPreview({
         nextPages.append(row)
         renderEntries.push({
           page,
+          row,
           canvas,
           context,
           displayViewport: viewport,
@@ -341,13 +434,21 @@ export function PdfPreview({
           pageNumber: index,
           renderWidth: Math.ceil(renderViewport.width),
           renderHeight: Math.ceil(renderViewport.height),
+          rendered: false,
+          rendering: false,
+          visible: false,
         })
       }
 
-      const prioritizedEntries = renderEntries.sort((left, right) => (
+      const prioritizedEntries = [...renderEntries].sort((left, right) => (
         Math.abs(left.pageNumber - anchorPage) - Math.abs(right.pageNumber - anchorPage)
       ))
       const renderPage = async (entry: typeof renderEntries[number]) => {
+        if (entry.rendered || entry.rendering || version !== renderVersionRef.current) {
+          return version === renderVersionRef.current
+        }
+        entry.rendering = true
+        let retryAfterCancellation = false
         entry.canvas.width = entry.renderWidth
         entry.canvas.height = entry.renderHeight
         const task = entry.page.render({
@@ -356,20 +457,60 @@ export function PdfPreview({
           viewport: entry.renderViewport,
           annotationMode: AnnotationMode.DISABLE,
         })
-        renderTaskRef.current = task
-        await task.promise
-        if (version !== renderVersionRef.current) return false
-        const textLayer = new TextLayer({
-          textContentSource: entry.page.streamTextContent({ includeMarkedContent: true }),
-          container: entry.textLayerContainer,
-          viewport: entry.displayViewport,
-        })
-        textLayersRef.current.push(textLayer)
-        await textLayer.render()
-        return version === renderVersionRef.current
+        renderTasksRef.current.set(entry.pageNumber, task)
+        try {
+          await task.promise
+          if (version !== renderVersionRef.current) return false
+          const textLayer = new TextLayer({
+            textContentSource: entry.page.streamTextContent({ includeMarkedContent: true }),
+            container: entry.textLayerContainer,
+            viewport: entry.displayViewport,
+          })
+          textLayersRef.current.set(entry.pageNumber, textLayer)
+          await textLayer.render()
+          if (version === renderVersionRef.current) {
+            entry.rendered = true
+            setRenderedVersion((current) => current + 1)
+          }
+          return version === renderVersionRef.current
+        } catch (error) {
+          entry.rendered = false
+          retryAfterCancellation = isPdfCancellation(error)
+          throw error
+        } finally {
+          entry.rendering = false
+          if (renderTasksRef.current.get(entry.pageNumber) === task) {
+            renderTasksRef.current.delete(entry.pageNumber)
+          }
+          if (retryAfterCancellation && entry.visible && version === renderVersionRef.current) {
+            window.setTimeout(() => {
+              if (entry.visible && !entry.rendered && !entry.rendering) {
+                void renderPage(entry).catch((error) => reportError(`pdf-page-render:${entry.pageNumber}`, error))
+              }
+            })
+          } else if (!entry.visible && version === renderVersionRef.current) {
+            releasePage(entry)
+          }
+        }
+      }
+      const releasePage = (entry: typeof renderEntries[number]) => {
+        if (entry.rendering) {
+          renderTasksRef.current.get(entry.pageNumber)?.cancel()
+          textLayersRef.current.get(entry.pageNumber)?.cancel()
+          return
+        }
+        renderTasksRef.current.get(entry.pageNumber)?.cancel()
+        renderTasksRef.current.delete(entry.pageNumber)
+        textLayersRef.current.get(entry.pageNumber)?.cancel()
+        textLayersRef.current.delete(entry.pageNumber)
+        entry.textLayerContainer.replaceChildren()
+        entry.canvas.width = 0
+        entry.canvas.height = 0
+        entry.rendered = false
       }
 
       const firstEntry = prioritizedEntries.shift()
+      if (firstEntry) firstEntry.visible = true
       if (!firstEntry || !await renderPage(firstEntry)) return
       const pages = pageStackRef.current
       if (!pages || version !== renderVersionRef.current) return
@@ -382,24 +523,56 @@ export function PdfPreview({
 
       if (displayedUrlRef.current !== pdfUrl) {
         const previousUrl = displayedUrlRef.current
+        const previousPdf = displayedPdfRef.current
         displayedUrlRef.current = pdfUrl
+        displayedPdfRef.current = pdf
         setDisplayedUrl(pdfUrl)
+        setDisplayedPageCount(pdf.numPages)
         if (previousUrl) URL.revokeObjectURL(previousUrl)
+        if (previousPdf && previousPdf !== pdf) {
+          if (printingRef.current) retiredPdfsRef.current.add(previousPdf)
+          else disposePdf(previousPdf)
+        }
       }
+      setPreviewStatus({ state: 'ready', url: pdfUrl })
 
-      for (const entry of prioritizedEntries) {
-        if (!await renderPage(entry)) return
-      }
-      setRenderedVersion((current) => current + 1)
+      const entriesByRow = new Map(renderEntries.map((entry) => [entry.row, entry]))
+      intersectionObserver = new IntersectionObserver((observations) => {
+        for (const observation of observations) {
+          const entry = entriesByRow.get(observation.target as HTMLDivElement)
+          if (!entry) continue
+          entry.visible = observation.isIntersecting
+          if (observation.isIntersecting) {
+            void renderPage(entry).catch((error) => {
+              if (isPdfCancellation(error)) return
+              reportError(`pdf-page-render:${entry.pageNumber}`, error)
+              setPreviewStatus({
+                state: 'error',
+                url: pdfUrl,
+                message: `Could not render page ${entry.pageNumber}.`,
+              })
+            })
+          } else {
+            releasePage(entry)
+          }
+        }
+      }, { root: container, rootMargin: '100% 0px' })
+      for (const entry of renderEntries) intersectionObserver.observe(entry.row)
     }
 
     void render().catch((error) => {
-      if (error instanceof Error && error.name === 'RenderingCancelledException') return
+      if (isPdfCancellation(error)) return
       reportError('pdf-render', error)
+      if (version === renderVersionRef.current) {
+        setPreviewStatus({ state: 'error', url: pdfUrl, message: error instanceof Error ? error.message : String(error) })
+      }
     })
     return () => {
-      renderTaskRef.current?.cancel()
-      for (const textLayer of textLayersRef.current.splice(0)) textLayer.cancel()
+      intersectionObserver?.disconnect()
+      for (const task of renderTasksRef.current.values()) task.cancel()
+      renderTasksRef.current.clear()
+      for (const textLayer of textLayersRef.current.values()) textLayer.cancel()
+      textLayersRef.current.clear()
     }
   }, [pdf, loadedPdfUrl, zoom, rotation, sizeVersion, document.pdfUrl])
 
@@ -519,45 +692,121 @@ export function PdfPreview({
 
   useEffect(() => {
     return () => {
-      renderTaskRef.current?.cancel()
-      for (const textLayer of textLayersRef.current.splice(0)) textLayer.cancel()
+      for (const task of renderTasksRef.current.values()) task.cancel()
+      for (const task of printTasksRef.current) task.cancel()
+      for (const textLayer of textLayersRef.current.values()) textLayer.cancel()
+      window.clearTimeout(printTimeoutRef.current)
+      printGenerationRef.current += 1
+      printingRef.current = false
+      printFrameRef.current?.remove()
       if (scrollFrameRef.current !== undefined) cancelAnimationFrame(scrollFrameRef.current)
-      if (pdf) void pdf.cleanup()
+      if (pdfRef.current) disposePdf(pdfRef.current)
+      if (displayedPdfRef.current && displayedPdfRef.current !== pdfRef.current) disposePdf(displayedPdfRef.current)
+      for (const retiredPdf of retiredPdfsRef.current) disposePdf(retiredPdf)
+      retiredPdfsRef.current.clear()
+      if (displayedUrlRef.current && displayedUrlRef.current !== documentPdfUrlRef.current) {
+        URL.revokeObjectURL(displayedUrlRef.current)
+      }
     }
-  }, [pdf])
+  }, [])
 
   const printPdf = async () => {
-    if (!pdf || printing) return
+    const printablePdf = displayedPdfRef.current
+    if (!printablePdf || printing) return
+    const generation = ++printGenerationRef.current
+    printingRef.current = true
     setPrinting(true)
+    const isCurrent = () => generation === printGenerationRef.current
+    const finishPrinting = () => {
+      if (!isCurrent()) return
+      printingRef.current = false
+      setPrinting(false)
+      for (const retiredPdf of retiredPdfsRef.current) disposePdf(retiredPdf)
+      retiredPdfsRef.current.clear()
+    }
     try {
       const images: string[] = []
-      for (let index = 1; index <= pdf.numPages; index += 1) {
-        const page = await pdf.getPage(index)
+      for (let index = 1; index <= printablePdf.numPages; index += 1) {
+        const page = await printablePdf.getPage(index)
+        if (!isCurrent()) return
         const viewport = page.getViewport({ scale: 1.5 })
         const canvas = window.document.createElement('canvas')
         canvas.width = Math.ceil(viewport.width)
         canvas.height = Math.ceil(viewport.height)
         const context = canvas.getContext('2d')
         if (!context) continue
-        await page.render({
+        const task = page.render({
           canvas,
           canvasContext: context,
           viewport,
           annotationMode: AnnotationMode.DISABLE,
-        }).promise
+        })
+        printTasksRef.current.add(task)
+        try {
+          await task.promise
+          if (!isCurrent()) return
+        } finally {
+          printTasksRef.current.delete(task)
+        }
         images.push(canvas.toDataURL('image/png'))
       }
 
       const frame = window.document.createElement('iframe')
+      if (!isCurrent()) return
       frame.className = 'pdf-print-frame'
       frame.srcdoc = `<!doctype html><style>@page{margin:0}body{margin:0}img{display:block;width:100%;page-break-after:always}</style>${images.map((image) => `<img src="${image}">`).join('')}`
+      printFrameRef.current?.remove()
+      printFrameRef.current = frame
+      const failPrintFrame = () => {
+        if (!isCurrent()) return
+        window.clearTimeout(printTimeoutRef.current)
+        printTimeoutRef.current = undefined
+        reportError('pdf-print-frame', new Error('The print frame did not load.'))
+        setPreviewStatus({ state: 'error', url: displayedUrl, message: 'Could not open the print preview.' })
+        frame.remove()
+        if (printFrameRef.current === frame) printFrameRef.current = undefined
+        finishPrinting()
+      }
+      printTimeoutRef.current = window.setTimeout(failPrintFrame, 15_000)
+      frame.onerror = () => {
+        failPrintFrame()
+      }
       frame.onload = () => {
-        frame.contentWindow?.print()
-        window.setTimeout(() => frame.remove(), 1000)
+        window.clearTimeout(printTimeoutRef.current)
+        printTimeoutRef.current = undefined
+        const printWindow = frame.contentWindow
+        if (!printWindow) {
+          failPrintFrame()
+          return
+        }
+        let completed = false
+        const finish = () => {
+          if (completed || !isCurrent()) return
+          completed = true
+          window.clearTimeout(printTimeoutRef.current)
+          printTimeoutRef.current = undefined
+          frame.remove()
+          if (printFrameRef.current === frame) printFrameRef.current = undefined
+          finishPrinting()
+        }
+        printWindow.addEventListener('afterprint', finish, { once: true })
+        printTimeoutRef.current = window.setTimeout(finish, 60_000)
+        try {
+          printWindow.print()
+        } catch (error) {
+          reportError('pdf-print', error)
+          setPreviewStatus({ state: 'error', url: displayedUrl, message: 'Could not print the PDF.' })
+          finish()
+        }
       }
       window.document.body.append(frame)
-    } finally {
-      setPrinting(false)
+    } catch (error) {
+      if (!isCurrent()) return
+      if (!isPdfCancellation(error)) {
+        reportError('pdf-print', error)
+        setPreviewStatus({ state: 'error', url: displayedUrl, message: 'Could not prepare the PDF for printing.' })
+      }
+      finishPrinting()
     }
   }
 
@@ -589,6 +838,13 @@ export function PdfPreview({
               </span>
             </span>
           )}
+          {previewRootStatus && previewRootStatus.state !== 'ready' && (
+            <i
+              className={`preview-discovery-indicator ${previewRootStatus.state}`}
+              title={previewRootStatus.message}
+              aria-label={previewRootStatus.message}
+            />
+          )}
           {previewRoots && previewRoots.length > 1 && document.filePath && (
             <select
               className="preview-root-select"
@@ -607,7 +863,7 @@ export function PdfPreview({
         </span>
         <PdfToolbar
           page={pageNumber}
-          pageCount={pdf?.numPages ?? 0}
+          pageCount={displayedPageCount}
           zoom={zoom}
           pdfUrl={displayedUrl}
           fileName={pdfFileName}
@@ -619,15 +875,28 @@ export function PdfPreview({
         />
       </div>
       <div className="preview-surface pdf-canvas-viewport" ref={viewportRef} onScroll={trackVisiblePage}>
+        {displayedUrl && previewStatus.state === 'error' && (
+          <div className="preview-error" role="alert">
+            <span>{previewStatus.message ?? 'The latest PDF could not be displayed.'}</span>
+            <button type="button" onClick={retryPreview}>Retry</button>
+          </div>
+        )}
         <div ref={pagesRef} className={`pdf-pages ${showPreviewPosition ? '' : 'position-hidden'}`}>
           <div ref={pageStackRef} className="pdf-page-stack" />
           <div ref={locationMarkerRef} className="pdf-location-marker" aria-hidden="true" />
         </div>
         {!displayedUrl && (
           <div className="preview-empty">
-            <div className={`loader ${document.compileState === 'error' ? 'loader-error' : ''}`} />
-            <strong>{document.compileState === 'error' ? 'Preview unavailable' : 'Building preview'}</strong>
-            <span>{document.compileState === 'error' ? 'Check the compilation output.' : 'The first compile may take a moment.'}</span>
+            <div className={`loader ${document.compileState === 'error' || previewStatus.state === 'error' ? 'loader-error' : ''}`} />
+            <strong>{document.compileState === 'error' || previewStatus.state === 'error' ? 'Preview unavailable' : 'Building preview'}</strong>
+            <span>{previewStatus.state === 'error'
+              ? previewStatus.message ?? 'The generated PDF could not be displayed.'
+              : document.compileState === 'error' ? 'Check the compilation output.' : 'The first compile may take a moment.'}</span>
+            {previewStatus.state === 'error' && document.pdfUrl && (
+              <button type="button" className="preview-retry" onClick={retryPreview}>
+                Retry preview
+              </button>
+            )}
           </div>
         )}
       </div>

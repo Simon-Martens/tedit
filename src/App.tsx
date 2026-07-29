@@ -10,7 +10,7 @@ import { useSourcePreviewSync } from './hooks/useSourcePreviewSync'
 import { useTinymistLanguageServer } from './hooks/useTinymistLanguageServer'
 import { createDocument, createPdfFilename, formatError, TYPST_INTRO_SOURCE } from './lib/documents'
 import { reportError } from './lib/logging'
-import type { DesktopFileChange, EditorDocument, PreviewRoot, WritableFileHandle } from './types'
+import type { DesktopFileChange, EditorDocument, PreviewRoot, WatchHealthStatus, WritableFileHandle } from './types'
 
 function browserSetting(key: string, fallback: boolean) {
   const value = localStorage.getItem(key)
@@ -47,13 +47,21 @@ function App() {
   const [previewRootDiscovery, setPreviewRootDiscovery] = useState<{
     documentId: string
     roots: PreviewRoot[]
+    status: WatchHealthStatus
   }>()
+  const [documentWatchStatus, setDocumentWatchStatus] = useState<WatchHealthStatus>({
+    state: 'disabled',
+    message: 'No open files need filesystem watching.',
+    watchedDirectories: 0,
+    requestedDirectories: 0,
+  })
   const fileInputRef = useRef<HTMLInputElement>(null)
   const documentsRef = useRef(documents)
   const activeIdRef = useRef(activeId)
   const conflictQueueRef = useRef(Promise.resolve())
   const activatedDocumentRef = useRef('')
   const recoveryTimerRef = useRef<number | undefined>(undefined)
+  const documentWatchRequestRef = useRef(0)
   const closingRef = useRef(false)
   documentsRef.current = documents
   activeIdRef.current = activeId
@@ -219,8 +227,24 @@ function App() {
 
   useEffect(() => {
     if (!sessionRestored || !window.typstDesktop) return
-    void window.typstDesktop.watchDocuments(sessionFilePaths).catch((error) => reportError('document-watch', error))
+    const request = ++documentWatchRequestRef.current
+    void window.typstDesktop.watchDocuments(sessionFilePaths)
+      .then((status) => {
+        if (request === documentWatchRequestRef.current) setDocumentWatchStatus(status)
+      })
+      .catch((error) => {
+        if (request !== documentWatchRequestRef.current) return
+        reportError('document-watch', error)
+        setDocumentWatchStatus({
+          state: 'error',
+          message: error instanceof Error ? error.message : String(error),
+          watchedDirectories: 0,
+          requestedDirectories: 0,
+        })
+      })
   }, [sessionRestored, sessionKey])
+
+  useEffect(() => window.typstDesktop?.onDocumentWatchStatus(setDocumentWatchStatus), [])
 
   useEffect(() => {
     const desktop = window.typstDesktop
@@ -252,9 +276,9 @@ function App() {
     const documentId = activeDocument.id
     const filePath = activeDocument.filePath
     let cancelled = false
-    const applyRoots = (roots: PreviewRoot[]) => {
+    const applyRoots = (roots: PreviewRoot[], status: WatchHealthStatus) => {
       if (cancelled) return
-      setPreviewRootDiscovery({ documentId, roots })
+      setPreviewRootDiscovery({ documentId, roots, status })
       setDocuments((current) => current.map((document) => {
         if (
           document.id !== documentId
@@ -269,7 +293,7 @@ function App() {
       }))
     }
     const removeRootListener = desktop.onPreviewRootsChanged((update) => {
-      if (update.filePath === filePath) applyRoots(update.roots)
+      if (update.filePath === filePath) applyRoots(update.roots, update.status)
     })
     const timeout = window.setTimeout(() => {
       void desktop.discoverPreviewRoots({
@@ -278,7 +302,20 @@ function App() {
           filePath: document.filePath,
           source: document.source,
         }] : []),
-      }).then(applyRoots).catch((error) => reportError('preview-root-discovery', error))
+      }).then((result) => applyRoots(result.roots, result.status)).catch((error) => {
+        if (cancelled) return
+        reportError('preview-root-discovery', error)
+        setPreviewRootDiscovery({
+          documentId,
+          roots: [],
+          status: {
+            state: 'error',
+            message: error instanceof Error ? error.message : String(error),
+            watchedDirectories: 0,
+            requestedDirectories: 0,
+          },
+        })
+      })
     }, 150)
     return () => {
       cancelled = true
@@ -747,6 +784,9 @@ function App() {
         <Workspace
           document={activeDocument}
           previewRoots={activePreviewRoots}
+          previewRootStatus={previewRootDiscovery?.documentId === activeDocument.id
+            ? previewRootDiscovery.status
+            : undefined}
           onPreviewRootChange={(filePath) => updateDocument(activeDocument.id, {
             previewRootPath: filePath === activeDocument.filePath ? undefined : filePath,
             dependencyRevision: activeDocument.dependencyRevision + 1,
@@ -806,6 +846,7 @@ function App() {
           mode: compilationOpen ? 'closed' : 'manual',
         })}
         languageServerStatus={languageServerStatus}
+        documentWatchStatus={documentWatchStatus}
       />
       {docsMounted && <DocsView open={docsOpen} onClose={() => setDocsOpen(false)} />}
     </main>

@@ -1,4 +1,4 @@
-import type { EditorDocument, LanguageServerStatus } from '../types'
+import type { EditorDocument, LanguageServerStatus, WatchHealthStatus } from '../types'
 import { Icon } from './Icon'
 
 export function Footer({
@@ -8,6 +8,7 @@ export function Footer({
   compilationOpen,
   onToggleCompilation,
   languageServerStatus,
+  documentWatchStatus,
 }: {
   document?: EditorDocument
   line: number
@@ -15,6 +16,7 @@ export function Footer({
   compilationOpen: boolean
   onToggleCompilation(): void
   languageServerStatus: LanguageServerStatus
+  documentWatchStatus: WatchHealthStatus
 }) {
   const state = document?.compileState ?? 'idle'
   const label = document
@@ -36,6 +38,15 @@ export function Footer({
         >
           <i aria-hidden="true" />
           Tinymist
+        </span>
+        <span
+          className={`footer-tinymist footer-tinymist-${documentWatchStatus.state}`}
+          title={documentWatchStatus.message}
+          role="status"
+          aria-live="polite"
+        >
+          <i aria-hidden="true" />
+          Files
         </span>
       </div>
       <div className="footer-compilation">

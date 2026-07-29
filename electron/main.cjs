@@ -29,6 +29,7 @@ const diskVersions = new Map()
 const documentWatchers = new Map()
 const watchedDocumentPaths = new Set()
 const documentWatchTimers = new Map()
+const documentWatcherRetryTimers = new Map()
 const documentInspectionGenerations = new Map()
 const documentSaveQueues = new Map()
 const unavailableSessionPaths = new Set()
@@ -47,6 +48,11 @@ let settingsWrite = Promise.resolve()
 let sessionWrite = Promise.resolve()
 let recoveryWrite = Promise.resolve()
 let tinymistLspStartGeneration = 0
+let documentWatchGeneration = 0
+let documentWatchRequestedDirectories = 0
+const maximumWatchedDocuments = 256
+const maximumDocumentWatchDirectories = 256
+const documentWatcherRetryDelays = [250, 500, 1000, 2000, 4000]
 const tinymist = new TinymistService((channel, payload) => {
   for (const window of BrowserWindow.getAllWindows()) window.webContents.send(channel, payload)
 })
@@ -149,22 +155,52 @@ function sendToWindows(channel, payload) {
   for (const window of BrowserWindow.getAllWindows()) window.webContents.send(channel, payload)
 }
 
-async function inspectWatchedDocument(filePath, generation, retries = 3) {
+function documentWatchStatus(state, message) {
+  return {
+    state,
+    message,
+    watchedDirectories: documentWatchers.size,
+    requestedDirectories: documentWatchRequestedDirectories,
+  }
+}
+
+function publishDocumentWatchStatus(state, message) {
+  const status = documentWatchStatus(state, message)
+  sendToWindows('document:watch-status', status)
+  return status
+}
+
+async function inspectWatchedDocument(filePath, generation, watchGeneration, retries = 3) {
+  if (watchGeneration !== documentWatchGeneration || !watchedDocumentPaths.has(filePath)) return
   try {
     const content = await fs.readFile(filePath, 'utf8')
-    if (documentInspectionGenerations.get(filePath) !== generation) return
+    if (
+      watchGeneration !== documentWatchGeneration
+      || !watchedDocumentPaths.has(filePath)
+      || documentInspectionGenerations.get(filePath) !== generation
+    ) return
     const diskVersion = contentVersion(content)
     if (diskVersions.get(filePath) === diskVersion) return
     diskVersions.set(filePath, diskVersion)
     sendToWindows('document:change', { filePath, kind: 'changed', content, diskVersion })
   } catch (error) {
-    if (error?.code !== 'ENOENT') {
-      logFailure('document-watch-read', error, { filePath })
+    if (
+      watchGeneration !== documentWatchGeneration
+      || !watchedDocumentPaths.has(filePath)
+      || documentInspectionGenerations.get(filePath) !== generation
+    ) return
+    if (retries > 0) {
+      const timer = setTimeout(() => {
+        if (documentWatchTimers.get(filePath) === timer) documentWatchTimers.delete(filePath)
+        void inspectWatchedDocument(filePath, generation, watchGeneration, retries - 1)
+      }, 75)
+      clearTimeout(documentWatchTimers.get(filePath))
+      documentWatchTimers.set(filePath, timer)
       return
     }
-    if (documentInspectionGenerations.get(filePath) !== generation) return
-    if (retries > 0) {
-      setTimeout(() => void inspectWatchedDocument(filePath, generation, retries - 1), 75)
+    if (error?.code !== 'ENOENT') {
+      logFailure('document-watch-read', error, { filePath })
+      publishDocumentWatchStatus('degraded', `Could not inspect ${path.basename(filePath)}. External changes may be delayed.`)
       return
     }
     if (!diskVersions.has(filePath)) return
@@ -174,13 +210,62 @@ async function inspectWatchedDocument(filePath, generation, retries = 3) {
 }
 
 function scheduleDocumentInspection(filePath) {
+  if (!watchedDocumentPaths.has(filePath)) return
+  const watchGeneration = documentWatchGeneration
   const generation = (documentInspectionGenerations.get(filePath) ?? 0) + 1
   documentInspectionGenerations.set(filePath, generation)
   clearTimeout(documentWatchTimers.get(filePath))
   documentWatchTimers.set(filePath, setTimeout(() => {
     documentWatchTimers.delete(filePath)
-    void inspectWatchedDocument(filePath, generation)
+    void inspectWatchedDocument(filePath, generation, watchGeneration)
   }, 100))
+}
+
+function installDocumentWatcher(directory, paths, generation, attempt = 0) {
+  if (generation !== documentWatchGeneration) return false
+  clearTimeout(documentWatcherRetryTimers.get(directory))
+  documentWatcherRetryTimers.delete(directory)
+  try {
+    const watcher = nativeFs.watch(directory, (_eventType, filename) => {
+      if (generation !== documentWatchGeneration || documentWatchers.get(directory) !== watcher) return
+      if (!filename) {
+        for (const filePath of paths) scheduleDocumentInspection(filePath)
+        return
+      }
+      const changedPath = normalizeDocumentPath(path.join(directory, filename.toString()))
+      if (paths.has(changedPath)) scheduleDocumentInspection(changedPath)
+    })
+    watcher.on('error', (error) => {
+      if (generation !== documentWatchGeneration || documentWatchers.get(directory) !== watcher) return
+      logFailure('document-watcher', error, { directory, attempt })
+      watcher.close()
+      documentWatchers.delete(directory)
+      scheduleDocumentWatcherRetry(directory, paths, generation, 0)
+    })
+    documentWatchers.set(directory, watcher)
+    if (documentWatchers.size === documentWatchRequestedDirectories) {
+      publishDocumentWatchStatus('ready', `Watching ${watchedDocumentPaths.size} open document${watchedDocumentPaths.size === 1 ? '' : 's'}.`)
+    }
+    return true
+  } catch (error) {
+    logFailure('document-watcher-create', error, { directory, attempt })
+    scheduleDocumentWatcherRetry(directory, paths, generation, attempt)
+    return false
+  }
+}
+
+function scheduleDocumentWatcherRetry(directory, paths, generation, attempt) {
+  if (generation !== documentWatchGeneration) return
+  if (attempt >= documentWatcherRetryDelays.length) {
+    publishDocumentWatchStatus('degraded', `Could not watch ${path.basename(directory)} after ${attempt} retries. External changes may be missed.`)
+    return
+  }
+  publishDocumentWatchStatus('degraded', `File watching is degraded. Retrying ${path.basename(directory)}.`)
+  const timer = setTimeout(() => {
+    if (documentWatcherRetryTimers.get(directory) === timer) documentWatcherRetryTimers.delete(directory)
+    installDocumentWatcher(directory, paths, generation, attempt + 1)
+  }, documentWatcherRetryDelays[attempt])
+  documentWatcherRetryTimers.set(directory, timer)
 }
 
 async function watchDocuments(filePaths) {
@@ -188,18 +273,23 @@ async function watchDocuments(filePaths) {
     .filter((filePath) => typeof filePath === 'string')
     .map(normalizeDocumentPath)
     .filter((filePath) => allowedDocumentPaths.has(filePath)))
-
-  for (const watcher of documentWatchers.values()) watcher.close()
-  documentWatchers.clear()
-  for (const [filePath, timer] of documentWatchTimers) {
-    if (requestedPaths.has(filePath)) continue
-    clearTimeout(timer)
-    documentWatchTimers.delete(filePath)
-    documentInspectionGenerations.delete(filePath)
+  if (requestedPaths.size > maximumWatchedDocuments) {
+    throw new Error(`Cannot watch more than ${maximumWatchedDocuments} open documents.`)
   }
-  watchedDocumentPaths.clear()
+
+  const directories = new Map()
   for (const filePath of requestedPaths) {
-    watchedDocumentPaths.add(filePath)
+    const directory = path.dirname(filePath)
+    const paths = directories.get(directory) ?? new Set()
+    paths.add(filePath)
+    directories.set(directory, paths)
+  }
+  if (directories.size > maximumDocumentWatchDirectories) {
+    throw new Error(`Cannot watch documents in more than ${maximumDocumentWatchDirectories} directories.`)
+  }
+  const generation = ++documentWatchGeneration
+
+  for (const filePath of requestedPaths) {
     if (!diskVersions.has(filePath)) {
       try {
         diskVersions.set(filePath, contentVersion(await fs.readFile(filePath, 'utf8')))
@@ -209,34 +299,27 @@ async function watchDocuments(filePaths) {
       }
     }
   }
+  if (generation !== documentWatchGeneration) return documentWatchStatus('disabled', 'A newer file-watch configuration replaced this request.')
 
-  const directories = new Map()
-  for (const filePath of watchedDocumentPaths) {
-    const directory = path.dirname(filePath)
-    const paths = directories.get(directory) ?? new Set()
-    paths.add(filePath)
-    directories.set(directory, paths)
-  }
+  for (const watcher of documentWatchers.values()) watcher.close()
+  documentWatchers.clear()
+  for (const timer of documentWatchTimers.values()) clearTimeout(timer)
+  documentWatchTimers.clear()
+  for (const timer of documentWatcherRetryTimers.values()) clearTimeout(timer)
+  documentWatcherRetryTimers.clear()
+  documentInspectionGenerations.clear()
+  watchedDocumentPaths.clear()
+  for (const filePath of requestedPaths) watchedDocumentPaths.add(filePath)
+  documentWatchRequestedDirectories = directories.size
+
+  if (!directories.size) return publishDocumentWatchStatus('disabled', 'No open files need filesystem watching.')
+  let failed = false
   for (const [directory, paths] of directories) {
-    try {
-      const watcher = nativeFs.watch(directory, (_eventType, filename) => {
-        if (!filename) {
-          for (const filePath of paths) scheduleDocumentInspection(filePath)
-          return
-        }
-        const changedPath = normalizeDocumentPath(path.join(directory, filename.toString()))
-        if (paths.has(changedPath)) scheduleDocumentInspection(changedPath)
-      })
-      watcher.on('error', (error) => {
-        logFailure('document-watcher', error, { directory })
-        watcher.close()
-        if (documentWatchers.get(directory) === watcher) documentWatchers.delete(directory)
-      })
-      documentWatchers.set(directory, watcher)
-    } catch (error) {
-      logFailure('document-watcher-create', error, { directory })
-    }
+    if (!installDocumentWatcher(directory, paths, generation)) failed = true
   }
+  return failed
+    ? documentWatchStatus('degraded', 'Some document directories could not be watched. Retrying in the background.')
+    : publishDocumentWatchStatus('ready', `Watching ${requestedPaths.size} open document${requestedPaths.size === 1 ? '' : 's'}.`)
 }
 
 function queueDocumentSave(filePath, save) {
@@ -563,6 +646,7 @@ function createWindow() {
     },
   })
   trustedWebContentsIds.add(window.webContents.id)
+  const webContentsId = window.webContents.id
   const closeState = { approved: false, pending: false, timeout: undefined }
   windowCloseStates.set(window.id, closeState)
 
@@ -598,7 +682,10 @@ function createWindow() {
   window.once('closed', () => {
     clearTimeout(closeState.timeout)
     windowCloseStates.delete(window.id)
-    trustedWebContentsIds.delete(window.webContents.id)
+    trustedWebContentsIds.delete(webContentsId)
+    const worker = previewDiscoveryWorkers.get(webContentsId)
+    if (worker) void worker.terminate()
+    previewDiscoveryWorkers.delete(webContentsId)
   })
 
   window.once('ready-to-show', () => window.show())
@@ -637,6 +724,9 @@ function createWindow() {
   })
   window.webContents.on('render-process-gone', (_event, details) => {
     logFailure('renderer-gone', new Error(details.reason), details)
+    const worker = previewDiscoveryWorkers.get(webContentsId)
+    if (worker) void worker.terminate()
+    previewDiscoveryWorkers.delete(webContentsId)
   })
   window.webContents.on('before-input-event', (event, input) => {
     if (input.type !== 'keyDown' || (!input.control && !input.meta)) return
@@ -820,26 +910,60 @@ handleIpc('document:discover-preview-roots', async (event, request) => {
 
   const roots = await new Promise((resolve, reject) => {
     let settled = false
+    let lastRoots = []
+    const timeout = setTimeout(() => {
+      if (settled || previewDiscoveryWorkers.get(event.sender.id) !== worker) return
+      settled = true
+      previewDiscoveryWorkers.delete(event.sender.id)
+      void worker.terminate()
+      reject(new Error('Preview-root discovery did not produce a result within 20 seconds.'))
+    }, 20_000)
     worker.on('message', (result) => {
       if (previewDiscoveryWorkers.get(event.sender.id) !== worker) return
+      if (
+        result?.type !== 'result'
+        || !Array.isArray(result.roots)
+        || !result.status
+        || !['ready', 'degraded'].includes(result.status.state)
+      ) {
+        logFailure('preview-root-discovery-message', new Error('Worker returned an invalid result.'))
+        return
+      }
+      lastRoots = result.roots
       previewRootsBySource.set(filePath, new Set(
-        result.map((root) => normalizeDocumentPath(root.filePath)),
+        result.roots.map((root) => normalizeDocumentPath(root.filePath)),
       ))
       if (!settled) {
         settled = true
+        clearTimeout(timeout)
         resolve(result)
       } else if (!event.sender.isDestroyed()) {
-        event.sender.send('document:preview-roots', { filePath, roots: result })
+        event.sender.send('document:preview-roots', { filePath, roots: result.roots, status: result.status })
       }
     })
     worker.once('error', (error) => {
+      clearTimeout(timeout)
+      logFailure('preview-root-discovery-worker', error, { filePath })
       if (!settled) {
         settled = true
         reject(error)
+      } else if (!event.sender.isDestroyed()) {
+        event.sender.send('document:preview-roots', {
+          filePath,
+          roots: lastRoots,
+          status: {
+            state: 'error',
+            message: 'Preview-root discovery stopped unexpectedly.',
+            watchedDirectories: 0,
+            requestedDirectories: 0,
+          },
+        })
       }
     })
     worker.once('exit', (code) => {
-      if (previewDiscoveryWorkers.get(event.sender.id) === worker) {
+      clearTimeout(timeout)
+      const wasCurrent = previewDiscoveryWorkers.get(event.sender.id) === worker
+      if (wasCurrent) {
         previewDiscoveryWorkers.delete(event.sender.id)
       }
       if (!settled) {
@@ -847,6 +971,17 @@ handleIpc('document:discover-preview-roots', async (event, request) => {
         reject(new Error(code === 0
           ? 'Preview-root discovery stopped before producing a result.'
           : 'Preview-root discovery was cancelled.'))
+      } else if (wasCurrent && code !== 0 && !event.sender.isDestroyed()) {
+        event.sender.send('document:preview-roots', {
+          filePath,
+          roots: lastRoots,
+          status: {
+            state: 'error',
+            message: 'Preview-root discovery stopped unexpectedly.',
+            watchedDirectories: 0,
+            requestedDirectories: 0,
+          },
+        })
       }
     })
   })
@@ -987,6 +1122,11 @@ app.on('window-all-closed', () => {
   documentWatchers.clear()
   for (const timer of documentWatchTimers.values()) clearTimeout(timer)
   documentWatchTimers.clear()
+  for (const timer of documentWatcherRetryTimers.values()) clearTimeout(timer)
+  documentWatcherRetryTimers.clear()
+  watchedDocumentPaths.clear()
+  documentInspectionGenerations.clear()
+  documentWatchGeneration += 1
   for (const worker of previewDiscoveryWorkers.values()) void worker.terminate()
   previewDiscoveryWorkers.clear()
   void Promise.all([
