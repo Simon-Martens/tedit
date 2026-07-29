@@ -13,7 +13,6 @@ export function useSourcePreviewSync(document: EditorDocument | undefined, enabl
   const [status, setStatus] = useState<SourceSyncStatus>(DISABLED_STATUS)
   const lastLocationRef = useRef<SourceCursorLocation | undefined>(undefined)
   const requestIdRef = useRef(0)
-  const fallbackTimerRef = useRef<number | undefined>(undefined)
   const canLocate = enabled
     && document !== undefined
     && status.state === 'ready'
@@ -48,7 +47,6 @@ export function useSourcePreviewSync(document: EditorDocument | undefined, enabl
 
     const removeJumpListener = desktop.onSourceJump((jump) => {
       if (jump.documentId === document.id && jump.requestId === requestIdRef.current) {
-        if (fallbackTimerRef.current !== undefined) window.clearTimeout(fallbackTimerRef.current)
         setPositions(jump.positions)
         setSourceCursorLocation(lastLocationRef.current)
       }
@@ -70,7 +68,6 @@ export function useSourcePreviewSync(document: EditorDocument | undefined, enabl
     })
 
     return () => {
-      if (fallbackTimerRef.current !== undefined) window.clearTimeout(fallbackTimerRef.current)
       removeJumpListener()
       removeStatusListener()
       desktop.stopSourceSync()
@@ -102,12 +99,8 @@ export function useSourcePreviewSync(document: EditorDocument | undefined, enabl
     if (!enabled) return
     lastLocationRef.current = location
     requestIdRef.current += 1
+    setPositions([])
     setSourceCursorLocation(location)
-    if (fallbackTimerRef.current !== undefined) window.clearTimeout(fallbackTimerRef.current)
-    const requestId = requestIdRef.current
-    fallbackTimerRef.current = window.setTimeout(() => {
-      if (requestIdRef.current === requestId) setPositions([])
-    }, 120)
     if (!window.typstDesktop || !canLocate || !document) return
     if (!canLocateRef.current) return
     window.typstDesktop.locateSource({

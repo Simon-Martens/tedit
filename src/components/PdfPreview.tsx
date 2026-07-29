@@ -137,6 +137,14 @@ function refinedTextY(tokens: TextToken[], signature: SourceSignature, anchor?: 
   return expected[0].y
 }
 
+function canvasPosition(canvas: HTMLCanvasElement) {
+  const row = canvas.parentElement
+  return {
+    left: (row?.offsetLeft ?? 0) + canvas.offsetLeft,
+    top: (row?.offsetTop ?? 0) + canvas.offsetTop,
+  }
+}
+
 export function PdfPreview({
   document,
   positions,
@@ -176,9 +184,9 @@ export function PdfPreview({
 
   const scrollToPage = (page: number, behavior: ScrollBehavior = 'smooth') => {
     const viewport = viewportRef.current
-    const canvas = pageStackRef.current?.querySelector<HTMLElement>(`[data-page="${page}"]`)
-    if (!viewport || !canvas) return
-    viewport.scrollTo({ top: Math.max(0, canvas.offsetTop - 6), behavior })
+    const row = pageStackRef.current?.querySelector<HTMLElement>(`.pdf-page-row[data-page="${page}"]`)
+    if (!viewport || !row) return
+    viewport.scrollTo({ top: Math.max(0, row.offsetTop - 6), behavior })
   }
 
   const changePage = (page: number) => {
@@ -192,7 +200,7 @@ export function PdfPreview({
     scrollFrameRef.current = requestAnimationFrame(() => {
       scrollFrameRef.current = undefined
       const viewport = viewportRef.current
-      const pages = pageStackRef.current?.querySelectorAll<HTMLElement>('[data-page]')
+      const pages = pageStackRef.current?.querySelectorAll<HTMLElement>('.pdf-page-row[data-page]')
       if (!viewport || !pages?.length) return
       const marker = viewport.scrollTop + Math.min(80, viewport.clientHeight * 0.25)
       let visiblePage = 1
@@ -256,15 +264,15 @@ export function PdfPreview({
       const nextPages = window.document.createDocumentFragment()
       const renderEntries: PageRenderEntry[] = []
       const currentPages = pageStackRef.current
-      const currentCanvases = currentPages?.querySelectorAll<HTMLCanvasElement>('[data-page]')
+      const currentRows = currentPages?.querySelectorAll<HTMLElement>('.pdf-page-row[data-page]')
       let anchorPage = Math.min(pageNumber, pdf.numPages)
       let anchorOffset = 0
-      if (currentCanvases?.length) {
+      if (currentRows?.length) {
         const scrollMarker = container.scrollTop + 6
-        for (const canvas of currentCanvases) {
-          if (canvas.offsetTop > scrollMarker) break
-          anchorPage = Number(canvas.dataset.page)
-          anchorOffset = Math.max(0, (scrollMarker - canvas.offsetTop) / canvas.clientHeight)
+        for (const row of currentRows) {
+          if (row.offsetTop > scrollMarker) break
+          anchorPage = Number(row.dataset.page)
+          anchorOffset = Math.max(0, (scrollMarker - row.offsetTop) / row.clientHeight)
         }
       }
 
@@ -296,6 +304,7 @@ export function PdfPreview({
         if (!context) continue
         const row = window.document.createElement('div')
         row.className = 'pdf-page-row'
+        row.dataset.page = String(index)
         const textLayerContainer = window.document.createElement('div')
         textLayerContainer.className = 'pdf-text-layer'
         textLayerContainer.style.setProperty('--total-scale-factor', String(viewport.scale))
@@ -345,9 +354,9 @@ export function PdfPreview({
       if (!pages || version !== renderVersionRef.current) return
       pages.replaceChildren(nextPages)
       setRenderedVersion((current) => current + 1)
-      const anchorCanvas = pages.querySelector<HTMLCanvasElement>(`[data-page="${anchorPage}"]`)
-      if (anchorCanvas) {
-        container.scrollTop = Math.max(0, anchorCanvas.offsetTop + anchorOffset * anchorCanvas.clientHeight - 6)
+      const anchorRow = pages.querySelector<HTMLElement>(`.pdf-page-row[data-page="${anchorPage}"]`)
+      if (anchorRow) {
+        container.scrollTop = Math.max(0, anchorRow.offsetTop + anchorOffset * anchorRow.clientHeight - 6)
       }
 
       if (displayedUrlRef.current !== pdfUrl) {
@@ -389,7 +398,7 @@ export function PdfPreview({
       const signature = sourceCursorLocation && sourceSignature(document.source, sourceCursorLocation)
       if (!pdf || !marker || !viewport || !signature || rotation !== 0) return
       let cancelled = false
-      const canvases = [...(pageStackRef.current?.querySelectorAll<HTMLCanvasElement>('[data-page]') ?? [])]
+      const canvases = [...(pageStackRef.current?.querySelectorAll<HTMLCanvasElement>('.pdf-page-canvas[data-page]') ?? [])]
       void Promise.all(canvases.map(async (canvas) => {
         const page = Number(canvas.dataset.page)
         const pageHeight = Number(canvas.dataset.pageHeight)
@@ -413,17 +422,14 @@ export function PdfPreview({
         if (cancelled) return
         const resolved = matches.filter((match): match is typeof match & { y: number } => match.y !== undefined)
         if (resolved.length !== 1) return
-        const { canvas, page, y } = resolved[0]
+        const { canvas, y } = resolved[0]
         const pageWidth = Number(canvas.dataset.pageWidth)
         const scale = canvas.clientWidth / pageWidth
-        const top = canvas.offsetTop + Math.max(0, y - 3) * scale
-        marker.style.left = `${canvas.offsetLeft + 7}px`
+        const position = canvasPosition(canvas)
+        const top = position.top + Math.max(0, y - 3) * scale
+        marker.style.left = `${position.left + 7}px`
         marker.style.top = `${top}px`
         marker.classList.add('visible')
-        if (autoScrollEnabled) {
-          viewport.scrollTo({ top: Math.max(0, top - viewport.clientHeight * 0.35), behavior: 'smooth' })
-          setPageNumber(page)
-        }
       }).catch(() => undefined)
       return () => {
         cancelled = true
@@ -432,7 +438,7 @@ export function PdfPreview({
     const position = positions.reduce((closest, candidate) => (
       Math.abs(candidate.page - pageNumber) <= Math.abs(closest.page - pageNumber) ? candidate : closest
     ))
-    const canvas = pageStackRef.current?.querySelector<HTMLCanvasElement>(`[data-page="${position.page}"]`)
+    const canvas = pageStackRef.current?.querySelector<HTMLCanvasElement>(`.pdf-page-canvas[data-page="${position.page}"]`)
     const marker = locationMarkerRef.current
     const viewport = viewportRef.current
     if (!canvas || !marker || !viewport) return
@@ -449,8 +455,9 @@ export function PdfPreview({
       else if (rotation === 180) y = pageHeight - unrotatedY
       else if (rotation === 270) y = pageWidth - position.x
 
-      const left = canvas.offsetLeft + 7
-      const top = canvas.offsetTop + Math.max(0, y - 3) * scale
+      const canvasOffset = canvasPosition(canvas)
+      const left = canvasOffset.left + 7
+      const top = canvasOffset.top + Math.max(0, y - 3) * scale
       marker.style.left = `${left}px`
       marker.style.top = `${top}px`
       marker.classList.add('visible')

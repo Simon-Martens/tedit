@@ -770,10 +770,15 @@ a:focus-visible {
   transition: border-color 120ms ease, background 120ms ease;
 }
 
-.topbar button:hover,
+.topbar button:hover:not(:disabled),
 .button-link:hover {
   border-color: #53564a;
   background: #292b24;
+}
+
+.topbar button:disabled {
+  opacity: 0.4;
+  cursor: default;
 }
 
 .button-link.disabled {
@@ -990,7 +995,7 @@ a:focus-visible {
   background: #f7f7f3;
 }
 
-.theme-light .topbar button:hover,
+.theme-light .topbar button:hover:not(:disabled),
 .theme-light .button-link:hover {
   border-color: #aeb2a5;
   background: #e9eae4;
