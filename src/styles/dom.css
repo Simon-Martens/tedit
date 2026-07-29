@@ -432,15 +432,10 @@ a:focus-visible {
 }
 
 .brand-mark {
-  display: grid;
   width: 24px;
   height: 24px;
-  place-items: center;
-  border-radius: var(--radius-panel);
-  color: #161810;
-  background: var(--color-accent);
-  font-size: 12px;
-  font-weight: 600;
+  flex: 0 0 auto;
+  object-fit: contain;
 }
 
 .document-title {

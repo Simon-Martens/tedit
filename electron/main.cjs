@@ -10,6 +10,9 @@ const { formatTinymistExportError, TinymistLspService } = require('./tinymist-ls
 app.setPath('userData', path.join(app.getPath('appData'), 'tedit'))
 
 const isDevelopment = Boolean(process.env.VITE_DEV_SERVER_URL)
+const appIconPath = isDevelopment
+  ? path.join(__dirname, '..', 'build', 'icon.png')
+  : path.join(process.resourcesPath, 'icon.png')
 const execFileAsync = promisify(execFile)
 const allowedDocumentPaths = new Set()
 const defaultSettings = {
@@ -186,6 +189,7 @@ function createWindow() {
     minHeight: 600,
     show: false,
     backgroundColor: '#11120f',
+    icon: appIconPath,
     title: 'tedit',
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),

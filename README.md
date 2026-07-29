@@ -1,46 +1,128 @@
 # tedit
 
-An Electron desktop application for editing Typst documents with Monaco, live compiler diagnostics, tabs, and a synchronized PDF preview.
+<p align="center">
+  <img src="build/icon.svg" width="96" height="96" alt="tedit logo">
+</p>
+
+![tedit editing a Typst document with a synchronized PDF preview](docs/screenshot.png)
+
+A focused desktop editor for [Typst](https://typst.app/) with Monaco editing,
+Tinymist diagnostics, live PDF output, and bundled offline documentation.
 
 *This App is 100% vibe coded for my own purposes. It just puts together already existing pieces: electron, typst, tinymist, the monaco editor &amp; pdf.js. As of right now it is intended to be fo personal use only, which means no support or guarantees are given.*
 
-## Run locally
+## Features
+
+- Monaco editor with Typst syntax support, folding, diagnostics, Find/Replace,
+  Undo/Redo, and optional Vim bindings
+- native Tinymist backend for in-memory PDF compilation and language-server
+  diagnostics
+- progressive multi-page PDF.js preview with selectable text, zoom, rotation,
+  printing, and downloads
+- source-to-preview position markers and automatic scrolling for saved files
+- draggable document tabs, session restoration, and repository metadata
+- bundled, searchable Typst documentation that works offline
+- persistent dark/light themes and editor settings
+- Linux, Windows, Intel macOS, and Apple Silicon macOS release artifacts
+
+## Downloads
+
+Installers and SHA-256 checksums are published on the
+[GitHub Releases](https://github.com/Simon-Martens/tedit/releases) page.
+
+Release builds currently include Tinymist `0.15.2`, which embeds Typst
+`0.15.0`, plus matching Typst `0.15.0` documentation. Windows and macOS
+installers are currently unsigned and may trigger operating-system warnings.
+
+## Architecture
+
+tedit is an Electron and React application. Tinymist is the single native
+Typst backend for compilation and diagnostics. The editor sends unsaved source
+through LSP document updates and requests PDF bytes from the same long-lived
+Tinymist process. PDF.js renders the result and supplies the selectable text
+layer.
+
+For saved documents, a separate Tinymist preview sidecar maps source positions
+to PDF coordinates. The PDF remains rendered by PDF.js; the sidecar is used
+only for synchronization.
+
+Tinymist is resolved in this order:
+
+1. `TINYMIST_PATH`
+2. the binary packaged with tedit
+3. a `tinymist` executable on `PATH` during development
+
+## Run Locally
+
+Requirements:
+
+- Node.js 24
+- npm
+- Rust stable and Cargo for building offline documentation
+- Inkscape and ImageMagick only when regenerating application icons
+
+Install dependencies:
 
 ```sh
 npm install
-npm run package-docs
+```
+
+Stage Tinymist for the current platform:
+
+```sh
 npm run package-tinymist
+```
+
+Build the offline documentation from a Typst `v0.15.0` checkout:
+
+```sh
+npm run package-docs -- /path/to/typst-v0.15.0
+```
+
+The path defaults to `../typst` and can also be supplied through
+`TYPST_SOURCE_DIR`. The first documentation build can take several minutes and
+multiple gigabytes of disk space.
+
+Start Vite and Electron:
+
+```sh
 npm run dev
 ```
 
-`npm run dev` starts Vite and opens the Electron window automatically.
-
-`npm run package-docs` builds and stages the offline Typst documentation from `../typst`. The checkout must match the Typst version embedded in Tinymist (`0.15.0`). Pass another checkout with `npm run package-docs -- /path/to/typst` or set `TYPST_SOURCE_DIR`. The first Rust build can take several minutes; subsequent builds are incremental. `npm run package-tinymist` downloads the platform binary and verifies its upstream SHA-256 checksum.
-
 ## Build
+
+Validate the renderer production build:
+
+```sh
+npm run build
+```
+
+Build documentation, package Tinymist, compile the renderer, and create a
+host-platform installer:
 
 ```sh
 npm run dist
 ```
 
-Installers are written to `release/`. `npm run dist` packages the Typst docs and Tinymist automatically. Use `npm run build` when you only need to validate the renderer production build.
+Generated installers are written to `release/`.
 
-The desktop app stores its open-file session in the operating system cache directory. On restart, existing files are reopened in their previous tab order and the active tab is restored; missing files are skipped.
+## Application Icons
 
-The bundled Tinymist process is the single Typst backend for diagnostics and PDF compilation. PDF export uses Tinymist's in-memory LSP document, so unsaved edits compile without temporary source files.
+`tedit.svg` is the editable icon source. After changing it, regenerate the
+path-only SVG, PNG, and Windows ICO assets:
 
-## Offline documentation
+```sh
+npm run generate-icons
+```
 
-The **Docs** toolbar button opens the official generated Typst documentation inside tedit. The complete static site, including its search index, is staged in `resources/typst-docs` and packaged as an Electron extra resource. Release CI builds the docs once from the pinned Typst revision and shares the platform-neutral result across all installer jobs.
+Generated assets are written to `build/` and should be committed together with
+the source SVG.
 
-## Source synchronization
+## Releases
 
-For saved documents, tedit runs a Tinymist preview sidecar to map Monaco cursor positions to PDF page coordinates. The current editing location is scrolled into view and highlighted without replacing the PDF.js renderer.
+Tags matching `v*` trigger the GitHub Actions release workflow. It builds the
+offline documentation once, creates four platform installers, generates
+checksums, and publishes a GitHub prerelease.
 
-Tinymist is resolved in this order:
-
-1. `TINYMIST_PATH`
-2. The packaged Tinymist `0.15.2` binary
-3. A `tinymist` executable on `PATH` during development
-
-The dot beside **PDF Preview** shows synchronization status. Hover it for details. Unsaved documents must be saved before source synchronization can start.
+See [docs/deployment.md](docs/deployment.md) for the complete preparation,
+validation, tagging, publication, verification, and recovery procedure.

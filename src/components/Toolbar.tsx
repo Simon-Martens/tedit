@@ -1,6 +1,7 @@
 import { Icon } from './Icon'
 import { SettingsMenu } from './SettingsMenu'
 import type { EditorDocument } from '../types'
+import teditLogo from '../../build/icon.svg'
 
 interface ToolbarProps {
   document?: EditorDocument
@@ -48,7 +49,7 @@ export function Toolbar({
   return (
     <header className="topbar">
       <div className="brand" aria-label="tedit">
-        <span className="brand-mark">T/</span>
+        <img className="brand-mark" src={teditLogo} alt="" />
         <span>tedit</span>
       </div>
       <div className="document-title">
