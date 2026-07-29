@@ -4,10 +4,11 @@ import { Toolbar } from './components/Toolbar'
 import { Workspace } from './components/Workspace'
 import { Icon } from './components/Icon'
 import { Footer } from './components/Footer'
+import { DocsView } from './components/DocsView'
 import { useTypstCompilation } from './hooks/useTypstCompilation'
 import { useSourcePreviewSync } from './hooks/useSourcePreviewSync'
 import { useTinymistLanguageServer } from './hooks/useTinymistLanguageServer'
-import { createDocument, createPdfFilename, formatError } from './lib/documents'
+import { createDocument, createPdfFilename, formatError, TYPST_INTRO_SOURCE } from './lib/documents'
 import type { EditorDocument, WritableFileHandle } from './types'
 
 function browserSetting(key: string, fallback: boolean) {
@@ -39,6 +40,8 @@ function App() {
     documentId: string
     mode: 'closed' | 'manual' | 'error'
   }>({ documentId: '', mode: 'closed' })
+  const [docsOpen, setDocsOpen] = useState(false)
+  const [docsMounted, setDocsMounted] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const documentsRef = useRef(documents)
   documentsRef.current = documents
@@ -75,8 +78,8 @@ function App() {
     )))
   }
 
-  useTypstCompilation(activeDocument, updateDocument)
   const languageServerStatus = useTinymistLanguageServer(activeDocument, updateDocument)
+  useTypstCompilation(activeDocument, updateDocument, languageServerStatus)
   const sourcePreviewSync = useSourcePreviewSync(
     activeDocument,
     showPreviewPosition || autoScrollEnabled,
@@ -376,6 +379,12 @@ function App() {
         pdfFileName={activeDocument ? createPdfFilename(activeDocument) : undefined}
         onOpen={() => void openFile()}
         onSave={() => void saveFile()}
+        docsOpen={docsOpen}
+        docsAvailable={Boolean(window.typstDesktop)}
+        onToggleDocs={() => {
+          if (!docsOpen) setDocsMounted(true)
+          setDocsOpen((current) => !current)
+        }}
         vimEnabled={vimEnabled}
         onVimEnabledChange={changeVimEnabled}
         showPreviewPosition={showPreviewPosition}
@@ -421,10 +430,23 @@ function App() {
         <section className="workspace-empty">
           <strong>No document open</strong>
           <span>Open an existing Typst file or create a new document.</span>
-          <button type="button" className="empty-create" onClick={() => addDocument(createDocument())}>
-            <Icon name="plus" />
-            <span>Create document</span>
-          </button>
+          <div className="empty-actions">
+            <button type="button" className="empty-create" onClick={() => addDocument(createDocument())}>
+              <Icon name="plus" />
+              <span>Create document</span>
+            </button>
+            <button
+              type="button"
+              className="empty-intro"
+              onClick={() => addDocument(createDocument({
+                fileName: 'typst-intro.typ',
+                source: TYPST_INTRO_SOURCE,
+              }))}
+            >
+              <Icon name="file" />
+              <span>Typst intro</span>
+            </button>
+          </div>
         </section>
       )}
       <Footer
@@ -438,6 +460,7 @@ function App() {
         })}
         languageServerStatus={languageServerStatus}
       />
+      {docsMounted && <DocsView open={docsOpen} onClose={() => setDocsOpen(false)} />}
     </main>
   )
 }

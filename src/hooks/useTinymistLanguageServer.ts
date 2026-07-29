@@ -8,7 +8,7 @@ import type {
 const DISABLED_STATUS: LanguageServerStatus = {
   documentId: '',
   state: 'disabled',
-  message: 'Open a saved document to start Tinymist.',
+  message: 'Tinymist requires the desktop app.',
 }
 
 function toEditorDiagnostic(diagnostic: LanguageServerDiagnostic) {
@@ -29,14 +29,16 @@ export function useTinymistLanguageServer(
   updateDocument: (id: string, update: Partial<EditorDocument>) => void,
 ) {
   const [status, setStatus] = useState<LanguageServerStatus>(DISABLED_STATUS)
+  const [retryGeneration, setRetryGeneration] = useState(0)
   const documentRef = useRef(document)
+  const failedRevisionRef = useRef<number | undefined>(undefined)
   const updateRef = useRef(updateDocument)
   documentRef.current = document
   updateRef.current = updateDocument
 
   useEffect(() => {
     const desktop = window.typstDesktop
-    if (!desktop || !document?.filePath) {
+    if (!desktop || !document) {
       setStatus({ ...DISABLED_STATUS, documentId: document?.id ?? '' })
       if (document) updateRef.current(document.id, { languageServerDiagnostics: undefined })
       return
@@ -49,7 +51,10 @@ export function useTinymistLanguageServer(
       if (nextStatus.documentId !== documentId) return
       setStatus(nextStatus)
       if (nextStatus.state === 'error') {
+        failedRevisionRef.current = documentRef.current?.sourceRevision
         updateRef.current(documentId, { languageServerDiagnostics: undefined })
+      } else if (nextStatus.state === 'ready') {
+        failedRevisionRef.current = undefined
       }
     })
     const removeDiagnosticsListener = desktop.onLanguageServerDiagnostics((update) => {
@@ -82,16 +87,29 @@ export function useTinymistLanguageServer(
       desktop.stopLanguageServer()
       updateRef.current(documentId, { languageServerDiagnostics: undefined })
     }
-  }, [document?.id, document?.filePath])
+  }, [document?.id, document?.filePath, retryGeneration])
 
   useEffect(() => {
-    if (!window.typstDesktop || !document?.filePath) return
+    if (!window.typstDesktop || !document) return
+    if (
+      status.documentId === document.id
+      && status.state === 'error'
+      && failedRevisionRef.current !== document.sourceRevision
+    ) {
+      updateRef.current(document.id, {
+        attemptedRevision: undefined,
+        compileState: 'loading',
+        messages: ['Restarting Tinymist...'],
+      })
+      setRetryGeneration((current) => current + 1)
+      return
+    }
     window.typstDesktop.updateLanguageServer({
       documentId: document.id,
       source: document.source,
       version: document.sourceRevision,
     })
-  }, [document?.id, document?.filePath, document?.sourceRevision])
+  }, [document?.id, document?.filePath, document?.sourceRevision, status.documentId, status.state])
 
   return status
 }

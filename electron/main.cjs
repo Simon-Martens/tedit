@@ -1,10 +1,11 @@
-const { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, session } = require('electron')
+const { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, net, protocol, session } = require('electron')
 const { execFile } = require('node:child_process')
 const fs = require('node:fs/promises')
 const path = require('node:path')
+const { pathToFileURL } = require('node:url')
 const { promisify } = require('node:util')
 const { TinymistService } = require('./tinymist-service.cjs')
-const { TinymistLspService } = require('./tinymist-lsp-service.cjs')
+const { formatTinymistExportError, TinymistLspService } = require('./tinymist-lsp-service.cjs')
 
 app.setPath('userData', path.join(app.getPath('appData'), 'tedit'))
 
@@ -28,6 +29,37 @@ const tinymist = new TinymistService((channel, payload) => {
 const tinymistLsp = new TinymistLspService((channel, payload) => {
   for (const window of BrowserWindow.getAllWindows()) window.webContents.send(channel, payload)
 })
+
+protocol.registerSchemesAsPrivileged([{
+  scheme: 'tedit-docs',
+  privileges: { standard: true, secure: true, supportFetchAPI: true },
+}])
+
+function configureDocumentationProtocol() {
+  const docsRoot = path.resolve(isDevelopment
+    ? path.join(__dirname, '..', 'resources', 'typst-docs', 'site')
+    : path.join(process.resourcesPath, 'typst-docs', 'site'))
+  protocol.handle('tedit-docs', async (request) => {
+    const url = new URL(request.url)
+    let relativePath
+    try {
+      relativePath = decodeURIComponent(url.pathname).replace(/^\/+/, '')
+    } catch {
+      return new Response('Bad request', { status: 400 })
+    }
+    let filePath = path.resolve(docsRoot, relativePath || 'index.html')
+    if (filePath !== docsRoot && !filePath.startsWith(`${docsRoot}${path.sep}`)) {
+      return new Response('Forbidden', { status: 403 })
+    }
+    try {
+      const stats = await fs.stat(filePath)
+      if (stats.isDirectory()) filePath = path.join(filePath, 'index.html')
+    } catch {
+      if (!path.extname(filePath)) filePath = path.join(filePath, 'index.html')
+    }
+    return net.fetch(pathToFileURL(filePath).href)
+  })
+}
 
 // PDFium text rendering is unreliable with Electron's Vulkan path on Wayland.
 if (process.platform === 'linux') app.commandLine.appendSwitch('disable-features', 'Vulkan')
@@ -276,13 +308,23 @@ ipcMain.on('tinymist:locate', (_event, request) => tinymist.locate(request))
 ipcMain.on('tinymist:stop', () => void tinymist.stop())
 
 ipcMain.handle('tinymist-lsp:start', async (_event, request) => {
-  const filePath = path.resolve(request.filePath)
-  if (!allowedDocumentPaths.has(filePath)) {
+  const filePath = request.filePath
+    ? path.resolve(request.filePath)
+    : path.join(app.getPath('cache'), 'tedit', 'untitled', `${request.documentId}.typ`)
+  if (request.filePath && !allowedDocumentPaths.has(filePath)) {
     throw new Error('Tinymist can only inspect a document opened by tedit.')
   }
-  void tinymistLsp.start({ ...request, filePath })
+  if (!request.filePath) await fs.mkdir(path.dirname(filePath), { recursive: true })
+  await tinymistLsp.start({ ...request, filePath })
 })
 ipcMain.on('tinymist-lsp:update', (_event, request) => tinymistLsp.update(request))
+ipcMain.handle('tinymist-lsp:compile', async (_event, request) => {
+  try {
+    return await tinymistLsp.compile(request)
+  } catch (error) {
+    return { error: formatTinymistExportError(error) }
+  }
+})
 ipcMain.on('tinymist-lsp:stop', () => void tinymistLsp.stop())
 
 if (!app.requestSingleInstanceLock()) {
@@ -298,6 +340,7 @@ if (!app.requestSingleInstanceLock()) {
   app.whenReady().then(() => {
     Menu.setApplicationMenu(null)
     configurePermissions()
+    configureDocumentationProtocol()
     createWindow()
 
     app.on('activate', () => {

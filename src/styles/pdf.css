@@ -184,7 +184,9 @@
 }
 
 .pdf-page-row {
+  position: relative;
   width: max-content;
+  line-height: 1;
 }
 
 .pdf-pages.position-hidden .pdf-location-marker {
@@ -197,6 +199,64 @@
   border-radius: 3px;
   background: white;
   box-shadow: 0 12px 35px rgb(0 0 0 / 30%);
+}
+
+.pdf-text-layer {
+  --min-font-size: 1;
+  --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size));
+  --min-font-size-inv: calc(1 / var(--min-font-size));
+
+  position: absolute;
+  z-index: 2;
+  inset: 0;
+  overflow: clip;
+  color: transparent;
+  line-height: 1;
+  text-align: initial;
+  text-size-adjust: none;
+  transform-origin: 0 0;
+  user-select: text;
+}
+
+.pdf-text-layer :is(span, br) {
+  position: absolute;
+  color: transparent;
+  cursor: text;
+  transform-origin: 0% 0%;
+  user-select: text;
+  white-space: pre;
+}
+
+.pdf-text-layer > :not(.markedContent),
+.pdf-text-layer .markedContent span:not(.markedContent) {
+  --font-height: 0;
+  --scale-x: 1;
+  --rotate: 0deg;
+
+  z-index: 1;
+  font-size: calc(var(--text-scale-factor) * var(--font-height));
+  transform: rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv));
+}
+
+.pdf-text-layer .markedContent {
+  display: contents;
+}
+
+.pdf-text-layer ::selection {
+  color: transparent;
+  background: color-mix(in srgb, Highlight, transparent 45%);
+}
+
+.pdf-text-layer br::selection {
+  background: transparent;
+}
+
+.pdf-text-layer .endOfContent {
+  position: absolute;
+  inset: 100% 0 0;
+  display: block;
+  cursor: default;
+  user-select: none;
 }
 
 .pdf-location-marker {

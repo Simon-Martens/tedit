@@ -1,6 +1,8 @@
 import type { EditorDocument } from '../types'
+import typstIntroSource from '../assets/typst-intro.typ?raw'
 
 export const INITIAL_SOURCE = ''
+export const TYPST_INTRO_SOURCE = typstIntroSource
 
 function parseTypstString(value: string) {
   try {
@@ -92,7 +94,7 @@ export function createDocument(input?: {
     repoName: input?.repoName,
     fallbackUuid: crypto.randomUUID(),
     compileState: 'loading',
-    messages: ['Initializing Typst compiler...'],
+    messages: ['Initializing Tinymist...'],
     diagnostics: [],
   }
 }

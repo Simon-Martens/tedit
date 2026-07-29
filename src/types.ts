@@ -58,11 +58,19 @@ export interface DesktopApi {
   writeClipboard(text: string): void
   startLanguageServer(request: {
     documentId: string
-    filePath: string
+    filePath?: string
     source: string
     version: number
   }): Promise<void>
   updateLanguageServer(request: { documentId: string; source: string; version: number }): void
+  compileWithLanguageServer(request: {
+    documentId: string
+    source: string
+    version: number
+  }): Promise<
+    | { version: number; durationMs: number; pdf: ArrayBuffer; error?: never }
+    | { error: string }
+  >
   stopLanguageServer(): void
   onLanguageServerStatus(listener: (status: LanguageServerStatus) => void): () => void
   onLanguageServerDiagnostics(listener: (update: {

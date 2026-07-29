@@ -19,6 +19,7 @@ contextBridge.exposeInMainWorld('typstDesktop', {
   },
   startLanguageServer: (request) => ipcRenderer.invoke('tinymist-lsp:start', request),
   updateLanguageServer: (request) => ipcRenderer.send('tinymist-lsp:update', request),
+  compileWithLanguageServer: (request) => ipcRenderer.invoke('tinymist-lsp:compile', request),
   stopLanguageServer: () => ipcRenderer.send('tinymist-lsp:stop'),
   onLanguageServerStatus: (listener) => {
     const handler = (_event, payload) => listener(payload)

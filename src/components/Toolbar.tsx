@@ -7,6 +7,9 @@ interface ToolbarProps {
   pdfFileName?: string
   onOpen(): void
   onSave(): void
+  docsOpen: boolean
+  docsAvailable: boolean
+  onToggleDocs(): void
   vimEnabled: boolean
   onVimEnabledChange(enabled: boolean): void
   showPreviewPosition: boolean
@@ -24,6 +27,9 @@ export function Toolbar({
   pdfFileName,
   onOpen,
   onSave,
+  docsOpen,
+  docsAvailable,
+  onToggleDocs,
   vimEnabled,
   onVimEnabledChange,
   showPreviewPosition,
@@ -72,6 +78,17 @@ export function Toolbar({
           <Icon name="download" />
           <span>PDF</span>
         </a>
+        <button
+          type="button"
+          className={`docs-toggle ${docsOpen ? 'active' : ''}`}
+          title={docsAvailable ? 'Open offline Typst documentation' : 'Offline documentation is available in the desktop app'}
+          aria-label="Typst documentation"
+          aria-pressed={docsOpen}
+          disabled={!docsAvailable}
+          onClick={onToggleDocs}
+        >
+          <Icon name="help" />
+        </button>
         <SettingsMenu
           vimEnabled={vimEnabled}
           onVimEnabledChange={onVimEnabledChange}

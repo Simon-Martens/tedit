@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import {
   AnnotationMode,
   GlobalWorkerOptions,
+  TextLayer,
   getDocument,
   type PDFDocumentProxy,
   type PDFPageProxy,
@@ -35,7 +36,9 @@ interface PageRenderEntry {
   page: PDFPageProxy
   canvas: HTMLCanvasElement
   context: CanvasRenderingContext2D
-  viewport: PageViewport
+  displayViewport: PageViewport
+  renderViewport: PageViewport
+  textLayerContainer: HTMLDivElement
   pageNumber: number
   renderWidth: number
   renderHeight: number
@@ -163,6 +166,7 @@ export function PdfPreview({
   const locationMarkerRef = useRef<HTMLDivElement>(null)
   const viewportRef = useRef<HTMLDivElement>(null)
   const renderTaskRef = useRef<RenderTask | undefined>(undefined)
+  const textLayersRef = useRef<TextLayer[]>([])
   const renderVersionRef = useRef(0)
   const displayedUrlRef = useRef<string | undefined>(undefined)
   const textTokensRef = useRef(new Map<number, Promise<TextToken[]>>())
@@ -240,6 +244,7 @@ export function PdfPreview({
     const pdfUrl = loadedPdfUrl
     const version = ++renderVersionRef.current
     renderTaskRef.current?.cancel()
+    for (const textLayer of textLayersRef.current.splice(0)) textLayer.cancel()
 
     const render = async () => {
       const container = viewportRef.current
@@ -291,13 +296,18 @@ export function PdfPreview({
         if (!context) continue
         const row = window.document.createElement('div')
         row.className = 'pdf-page-row'
-        row.append(canvas)
+        const textLayerContainer = window.document.createElement('div')
+        textLayerContainer.className = 'pdf-text-layer'
+        textLayerContainer.style.setProperty('--total-scale-factor', String(viewport.scale))
+        row.append(canvas, textLayerContainer)
         nextPages.append(row)
         renderEntries.push({
           page,
           canvas,
           context,
-          viewport: renderViewport,
+          displayViewport: viewport,
+          renderViewport,
+          textLayerContainer,
           pageNumber: index,
           renderWidth: Math.ceil(renderViewport.width),
           renderHeight: Math.ceil(renderViewport.height),
@@ -313,11 +323,19 @@ export function PdfPreview({
         const task = entry.page.render({
           canvas: entry.canvas,
           canvasContext: entry.context,
-          viewport: entry.viewport,
+          viewport: entry.renderViewport,
           annotationMode: AnnotationMode.DISABLE,
         })
         renderTaskRef.current = task
         await task.promise
+        if (version !== renderVersionRef.current) return false
+        const textLayer = new TextLayer({
+          textContentSource: entry.page.streamTextContent({ includeMarkedContent: true }),
+          container: entry.textLayerContainer,
+          viewport: entry.displayViewport,
+        })
+        textLayersRef.current.push(textLayer)
+        await textLayer.render()
         return version === renderVersionRef.current
       }
 
@@ -348,7 +366,10 @@ export function PdfPreview({
     void render().catch((error) => {
       if (error instanceof Error && error.name === 'RenderingCancelledException') return
     })
-    return () => renderTaskRef.current?.cancel()
+    return () => {
+      renderTaskRef.current?.cancel()
+      for (const textLayer of textLayersRef.current.splice(0)) textLayer.cancel()
+    }
   }, [pdf, loadedPdfUrl, zoom, rotation, sizeVersion, document.pdfUrl])
 
   useEffect(() => {
@@ -470,6 +491,7 @@ export function PdfPreview({
   useEffect(() => {
     return () => {
       renderTaskRef.current?.cancel()
+      for (const textLayer of textLayersRef.current.splice(0)) textLayer.cancel()
       if (scrollFrameRef.current !== undefined) cancelAnimationFrame(scrollFrameRef.current)
       if (pdf) void pdf.cleanup()
     }
