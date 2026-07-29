@@ -1,9 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import Editor, { type OnMount } from '@monaco-editor/react'
+import type { editor as MonacoEditor, languages as MonacoLanguages, Position } from 'monaco-editor'
 import { initVimMode, VimMode, type VimAdapterInstance } from 'monaco-vim'
 import { configureTypstLanguage, getTypstFoldingRanges } from '../lib/typstLanguage'
 import { reportError } from '../lib/logging'
-import type { EditorDocument, SourceCursorLocation } from '../types'
+import { toMonacoCompletions } from '../lib/monacoCompletions'
+import type { BibliographyBuffer } from '../hooks/useBibliographies'
+import type { EditorDocument, LanguageServerDocument, SourceCursorLocation } from '../types'
 import { Icon } from './Icon'
 
 interface VimRegister {
@@ -100,6 +103,12 @@ export function SourcePane({
   onCursorPositionChange,
   onCursorChange,
   onSave,
+  bibliographies,
+  languageServerDocuments,
+  bibliographyOpen,
+  selectedBibliography,
+  onSelectBibliography,
+  onToggleBibliography,
 }: {
   document: EditorDocument
   onChange(value: string): void
@@ -110,6 +119,12 @@ export function SourcePane({
   onCursorPositionChange(location: SourceCursorLocation): void
   onCursorChange(line: number, column: number): void
   onSave(): void
+  bibliographies: BibliographyBuffer[]
+  languageServerDocuments: LanguageServerDocument[]
+  bibliographyOpen: boolean
+  selectedBibliography?: BibliographyBuffer
+  onSelectBibliography(id: string): void
+  onToggleBibliography(): void
 }) {
   const editorRef = useRef<Parameters<OnMount>[0] | null>(null)
   const monacoRef = useRef<Parameters<OnMount>[1] | null>(null)
@@ -120,6 +135,9 @@ export function SourcePane({
   const modelListenerRef = useRef<{ dispose(): void } | null>(null)
   const historyListenerRef = useRef<{ dispose(): void } | null>(null)
   const findActionRef = useRef<{ dispose(): void } | null>(null)
+  const completionProviderRef = useRef<{ dispose(): void } | null>(null)
+  const documentRef = useRef(document)
+  const languageServerDocumentsRef = useRef(languageServerDocuments)
   const initiallyCollapsedModelsRef = useRef(new Set<string>())
   const foldingEnabledRef = useRef(foldingEnabled)
   const diagnostics = document.languageServerDiagnostics ?? document.diagnostics
@@ -132,6 +150,8 @@ export function SourcePane({
   cursorCallbackRef.current = onCursorPositionChange
   cursorPositionCallbackRef.current = onCursorChange
   saveCallbackRef.current = onSave
+  documentRef.current = document
+  languageServerDocumentsRef.current = languageServerDocuments
   foldingEnabledRef.current = foldingEnabled
   diagnosticsRef.current = diagnostics
 
@@ -291,6 +311,7 @@ export function SourcePane({
       modelListenerRef.current?.dispose()
       historyListenerRef.current?.dispose()
       findActionRef.current?.dispose()
+      completionProviderRef.current?.dispose()
       const model = editorRef.current?.getModel()
       if (model) monacoRef.current?.editor.setModelMarkers(model, 'typst', [])
     }
@@ -301,7 +322,34 @@ export function SourcePane({
       <div className="panel-heading source-heading">
         <span className="source-title">Source</span>
           <span className="source-actions">
-            <span className="panel-meta">Typst</span>
+            {bibliographies.length === 1 && (
+              <button
+                type="button"
+                className={`bibliography-toggle${bibliographyOpen ? ' active' : ''}`}
+                title={`${bibliographyOpen ? 'Hide' : 'Show'} ${bibliographies[0].relativePath}`}
+                aria-label={`${bibliographyOpen ? 'Hide' : 'Show'} bibliography`}
+                aria-pressed={bibliographyOpen}
+                onClick={onToggleBibliography}
+              >
+                <Icon name="file" />
+                <span>{bibliographies[0].name}</span>
+                {bibliographies[0].isDirty && <i aria-label="Unsaved changes" />}
+              </button>
+            )}
+            {bibliographies.length > 1 && (
+              <select
+                className="bibliography-select"
+                aria-label="Open bibliography"
+                title="Choose a bibliography to show, or hide the bibliography pane"
+                value={bibliographyOpen ? selectedBibliography?.id ?? '' : ''}
+                onChange={(event) => onSelectBibliography(event.target.value)}
+              >
+                <option value="">Bibliography...</option>
+                {bibliographies.map((file) => (
+                  <option key={file.id} value={file.id}>{file.name}{file.isDirty ? ' *' : ''}</option>
+                ))}
+              </select>
+            )}
             <button
               type="button"
               className="source-search"
@@ -375,6 +423,57 @@ export function SourcePane({
               label: 'Find',
               keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyF],
               run: () => editor.getAction('actions.find')?.run(),
+            })
+            completionProviderRef.current?.dispose()
+            completionProviderRef.current = monaco.languages.registerCompletionItemProvider('typst', {
+              triggerCharacters: ['#', '@', '.', ':', '"', '<', '/', '('],
+              provideCompletionItems: async (
+                model: MonacoEditor.ITextModel,
+                position: Position,
+                context: MonacoLanguages.CompletionContext,
+              ) => {
+                const desktop = window.typstDesktop
+                if (!desktop || model !== editor.getModel()) return { suggestions: [] }
+                const currentDocument = documentRef.current
+                const source = model.getValue()
+                let activeDocumentFound = false
+                const openDocuments = languageServerDocumentsRef.current.map((openDocument) => {
+                  if (openDocument.documentId !== currentDocument.id) return openDocument
+                  activeDocumentFound = true
+                  if (openDocument.source === source) return openDocument
+                  return {
+                    ...openDocument,
+                    source,
+                    version: openDocument.version + 1,
+                    sourceVersion: openDocument.sourceVersion + 1,
+                  }
+                })
+                if (currentDocument.filePath && !activeDocumentFound) return { suggestions: [] }
+                const word = model.getWordUntilPosition(position)
+                const range = {
+                  startLineNumber: position.lineNumber,
+                  startColumn: word.startColumn,
+                  endLineNumber: position.lineNumber,
+                  endColumn: position.column,
+                }
+                try {
+                  const result = await desktop.completeWithLanguageServer({
+                    documentId: currentDocument.id,
+                    line: position.lineNumber - 1,
+                    character: position.column - 1,
+                    source,
+                    sourceVersion: activeDocumentFound
+                      ? openDocuments.find(({ documentId }) => documentId === currentDocument.id)!.sourceVersion
+                      : currentDocument.sourceRevision + (currentDocument.source === source ? 0 : 1),
+                    triggerCharacter: context.triggerCharacter,
+                    openDocuments,
+                  })
+                  return toMonacoCompletions(monaco, result, range)
+                } catch (error) {
+                  reportError('tinymist-completion', error)
+                  return { suggestions: [] }
+                }
+              },
             })
             const collapseInitialModel = () => {
               const model = editor.getModel()

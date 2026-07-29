@@ -13,7 +13,7 @@ import {
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import { createPdfFilename } from '../lib/documents'
 import { reportError } from '../lib/logging'
-import type { EditorDocument, PreviewPosition, PreviewRoot, SourceCursorLocation, SourceSyncStatus, WatchHealthStatus } from '../types'
+import type { EditorDocument, PreviewPosition, PreviewRoot, SourceCursorLocation } from '../types'
 import { PdfToolbar, type PdfZoom } from './PdfToolbar'
 
 GlobalWorkerOptions.workerSrc = pdfWorkerUrl
@@ -189,21 +189,17 @@ function compactPreviewPath(value: string, maximumLength = 48) {
 export function PdfPreview({
   document,
   previewRoots,
-  previewRootStatus,
   onPreviewRootChange,
   positions,
   sourceCursorLocation,
-  sourceSyncStatus,
   showPreviewPosition,
   autoScrollEnabled,
 }: {
   document: EditorDocument
   previewRoots?: PreviewRoot[]
-  previewRootStatus?: WatchHealthStatus
   onPreviewRootChange(filePath: string): void
   positions: PreviewPosition[]
   sourceCursorLocation?: SourceCursorLocation
-  sourceSyncStatus: SourceSyncStatus
   showPreviewPosition: boolean
   autoScrollEnabled: boolean
 }) {
@@ -235,18 +231,12 @@ export function PdfPreview({
   const displayedUrlRef = useRef<string | undefined>(undefined)
   const displayedPdfRef = useRef<PDFDocumentProxy | undefined>(undefined)
   const pdfRef = useRef<PDFDocumentProxy | undefined>(undefined)
-  const loadingUrlRef = useRef<string | undefined>(undefined)
   const documentPdfUrlRef = useRef<string | undefined>(undefined)
   const textTokensRef = useRef(new Map<number, Promise<TextToken[]>>())
   const scrollFrameRef = useRef<number | undefined>(undefined)
   const pdfFileName = createPdfFilename(document)
   pdfRef.current = pdf
   documentPdfUrlRef.current = document.pdfUrl
-  const latestPreviewFailed = previewStatus.state === 'error' && previewStatus.url === document.pdfUrl
-  const isUpdating = document.compileState === 'compiling'
-    || previewStatus.state === 'loading'
-    || previewStatus.state === 'rendering'
-    || (document.pdfUrl !== displayedUrl && !latestPreviewFailed)
   const retryPreview = () => {
     setPreviewStatus({ state: 'loading', url: document.pdfUrl })
     if (document.pdfUrl === displayedUrlRef.current) {
@@ -314,41 +304,53 @@ export function PdfPreview({
   useEffect(() => {
     if (!document.pdfUrl || document.pdfUrl === displayedUrlRef.current) return
     const url = document.pdfUrl
-    const previousLoadingUrl = loadingUrlRef.current
-    if (previousLoadingUrl && previousLoadingUrl !== url && previousLoadingUrl !== displayedUrlRef.current) {
-      URL.revokeObjectURL(previousLoadingUrl)
-    }
-    loadingUrlRef.current = url
     renderVersionRef.current += 1
     for (const task of renderTasksRef.current.values()) task.cancel()
     renderTasksRef.current.clear()
     setPreviewStatus({ state: 'loading', url })
-    const loadingTask = getDocument({ url })
     let cancelled = false
-    let resolved = false
+    const abortController = new AbortController()
+    const revokeIfRetired = () => {
+      if (url !== documentPdfUrlRef.current && url !== displayedUrlRef.current) URL.revokeObjectURL(url)
+    }
 
-    loadingTask.promise.then((nextPdf) => {
-      pdfLoadingTasks.set(nextPdf, loadingTask)
-      if (cancelled) {
-        disposePdf(nextPdf)
-        return
+    void (async () => {
+      try {
+        const response = await fetch(url, { signal: abortController.signal })
+        if (!response.ok) throw new Error(`Could not read the generated PDF (${response.status}).`)
+        const data = new Uint8Array(await response.arrayBuffer())
+        if (cancelled) {
+          revokeIfRetired()
+          return
+        }
+        const loadingTask = getDocument({ data })
+        const nextPdf = await loadingTask.promise
+        pdfLoadingTasks.set(nextPdf, loadingTask)
+        if (cancelled) {
+          disposePdf(nextPdf)
+          revokeIfRetired()
+          return
+        }
+        const previousPdf = pdfRef.current
+        if (previousPdf && previousPdf !== displayedPdfRef.current) disposePdf(previousPdf)
+        setPdf(nextPdf)
+        setLoadedPdfUrl(url)
+        setPageNumber((current) => Math.min(current, nextPdf.numPages))
+        setPreviewStatus({ state: 'rendering', url })
+      } catch (error) {
+        if (cancelled) {
+          revokeIfRetired()
+          return
+        }
+        reportError('pdf-load', error)
+        setPreviewStatus({ state: 'error', url, message: error instanceof Error ? error.message : String(error) })
       }
-      resolved = true
-      const previousPdf = pdfRef.current
-      if (previousPdf && previousPdf !== displayedPdfRef.current) disposePdf(previousPdf)
-      setPdf(nextPdf)
-      setLoadedPdfUrl(url)
-      setPageNumber((current) => Math.min(current, nextPdf.numPages))
-      setPreviewStatus({ state: 'rendering', url })
-    }).catch((error) => {
-      if (cancelled) return
-      reportError('pdf-load', error)
-      setPreviewStatus({ state: 'error', url, message: error instanceof Error ? error.message : String(error) })
-    })
+    })()
 
     return () => {
       cancelled = true
-      if (!resolved) void loadingTask.destroy()
+      abortController.abort()
+      queueMicrotask(revokeIfRetired)
     }
   }, [document.pdfUrl, retryVersion])
 
@@ -467,11 +469,15 @@ export function PdfPreview({
             viewport: entry.displayViewport,
           })
           textLayersRef.current.set(entry.pageNumber, textLayer)
-          await textLayer.render()
           if (version === renderVersionRef.current) {
             entry.rendered = true
             setRenderedVersion((current) => current + 1)
           }
+          void textLayer.render().then(() => {
+            if (version === renderVersionRef.current) setRenderedVersion((current) => current + 1)
+          }).catch((error) => {
+            if (!isPdfCancellation(error)) reportError(`pdf-text-layer:${entry.pageNumber}`, error)
+          })
           return version === renderVersionRef.current
         } catch (error) {
           entry.rendered = false
@@ -815,14 +821,6 @@ export function PdfPreview({
       <div className="panel-heading preview-heading">
         <span className="preview-title">
           <span className="preview-label">PDF Preview</span>
-          {isUpdating && displayedUrl ? (
-            <i className="preview-spinner" title="Updating PDF preview" />
-          ) : (
-            <i
-              className={`source-sync-indicator ${sourceSyncStatus.state}`}
-              title={sourceSyncStatus.message}
-            />
-          )}
           {previewRoots?.length === 1 && (
             <span className="preview-root-name" title={previewRoots[0].filePath}>
               {splitPreviewPath(previewRoots[0].relativePath).directory && (
@@ -837,13 +835,6 @@ export function PdfPreview({
                 {splitPreviewPath(previewRoots[0].relativePath).fileName}
               </span>
             </span>
-          )}
-          {previewRootStatus && previewRootStatus.state !== 'ready' && (
-            <i
-              className={`preview-discovery-indicator ${previewRootStatus.state}`}
-              title={previewRootStatus.message}
-              aria-label={previewRootStatus.message}
-            />
           )}
           {previewRoots && previewRoots.length > 1 && document.filePath && (
             <select

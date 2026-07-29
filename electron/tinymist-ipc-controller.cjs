@@ -30,8 +30,10 @@ function createTinymistIpcController({ app, handleIpc, isAllowedPreviewRoot, onI
     if (
       typeof request?.documentId !== 'string'
       || !/^[A-Za-z0-9-]{1,64}$/.test(request.documentId)
+      || !/^[A-Za-z0-9-]{1,64}$/.test(request.documentId)
       || typeof request.source !== 'string'
       || !Number.isSafeInteger(request.version)
+      || !Number.isSafeInteger(request.sourceVersion)
     ) throw new Error('Invalid Tinymist language-server start request.')
     const activeFilePath = request.filePath
       ? registry.normalizeDocumentPath(request.filePath)
@@ -59,7 +61,7 @@ function createTinymistIpcController({ app, handleIpc, isAllowedPreviewRoot, onI
       filePath,
       source,
       version,
-      activeVersion: request.version,
+      activeVersion: request.sourceVersion,
       rootDiskBacked: !openRoot && filePath !== activeFilePath,
       openDocuments,
     })
@@ -67,6 +69,25 @@ function createTinymistIpcController({ app, handleIpc, isAllowedPreviewRoot, onI
   handleIpc('tinymist-lsp:sync-documents', async (_event, request) => {
     const openDocuments = registry.normalizeLanguageServerDocuments(request.openDocuments)
     await tinymistLsp.syncDocuments({ ...request, openDocuments })
+  })
+  handleIpc('tinymist-lsp:complete', async (_event, request) => {
+    if (
+      typeof request?.documentId !== 'string'
+      || !Number.isSafeInteger(request.line)
+      || request.line < 0
+      || !Number.isSafeInteger(request.character)
+      || request.character < 0
+      || typeof request.source !== 'string'
+      || !Number.isSafeInteger(request.sourceVersion)
+      || request.sourceVersion < 0
+      || Buffer.byteLength(request.source) > 8 * 1024 * 1024
+      || (request.triggerCharacter !== undefined && (
+        typeof request.triggerCharacter !== 'string'
+        || [...request.triggerCharacter].length !== 1
+      ))
+    ) throw new Error('Invalid Tinymist completion request.')
+    const openDocuments = registry.normalizeLanguageServerDocuments(request.openDocuments)
+    return tinymistLsp.complete({ ...request, openDocuments })
   })
   handleIpc('tinymist-lsp:compile', async (_event, request) => {
     try {

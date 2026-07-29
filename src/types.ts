@@ -35,12 +35,77 @@ export interface DesktopFileChange {
   diskVersion?: string
 }
 
+export interface BibliographySnapshot {
+  id: string
+  filePath: string
+  name: string
+  content: string
+  diskVersion?: string
+  exists: boolean
+}
+
+export interface BibliographyFile extends BibliographySnapshot {
+  relativePath: string
+}
+
+export interface BibliographyConflict {
+  id: string
+  filePath: string
+  name: string
+  kind: 'changed' | 'deleted'
+  content?: string
+  diskVersion?: string
+  exists: boolean
+}
+
+export type BibliographyChange = { documentId: string } & BibliographyConflict
+
 export interface LanguageServerDocument {
   documentId: string
   filePath?: string
   source: string
   version: number
+  sourceVersion: number
 }
+
+export interface LanguageServerCompletionRange {
+  start: SourcePosition
+  end: SourcePosition
+}
+
+export interface LanguageServerCompletionItem {
+  label: string | { label: string; detail?: string; description?: string }
+  kind?: number
+  detail?: string
+  documentation?: string | { kind?: string; value: string }
+  sortText?: string
+  filterText?: string
+  insertText?: string
+  textEditText?: string
+  insertTextFormat?: number
+  preselect?: boolean
+  commitCharacters?: string[]
+  textEdit?: {
+    newText: string
+    range?: LanguageServerCompletionRange
+    insert?: LanguageServerCompletionRange
+    replace?: LanguageServerCompletionRange
+  }
+  additionalTextEdits?: Array<{ newText: string; range: LanguageServerCompletionRange }>
+}
+
+export type LanguageServerCompletionResult = LanguageServerCompletionItem[] | {
+  isIncomplete?: boolean
+  items: LanguageServerCompletionItem[]
+  itemDefaults?: {
+    commitCharacters?: string[]
+    editRange?: LanguageServerCompletionRange | {
+      insert: LanguageServerCompletionRange
+      replace: LanguageServerCompletionRange
+    }
+    insertTextFormat?: number
+  }
+} | null
 
 export interface PreviewRoot {
   filePath: string
@@ -85,6 +150,21 @@ export interface DesktopApi {
   watchDocuments(filePaths: string[]): Promise<WatchHealthStatus>
   onDocumentWatchStatus(listener: (status: WatchHealthStatus) => void): () => void
   onDocumentChange(listener: (change: DesktopFileChange) => void): () => void
+  discoverBibliographies(request: {
+    documentId: string
+    sourceFilePath: string
+    rootFilePath: string
+    documents: Array<{ filePath: string; source: string }>
+    retainedIds: string[]
+  }): Promise<{ documentId: string; files: BibliographyFile[] }>
+  saveBibliography(request: {
+    documentId: string
+    id: string
+    content: string
+    expectedDiskVersion?: string | null
+  }): Promise<BibliographySnapshot | { conflict: BibliographyConflict }>
+  stopBibliographies(request: { documentId: string }): void
+  onBibliographyChange(listener: (change: BibliographyChange) => void): () => void
   resolveDocumentConflict(request: {
     name: string
     deleted: boolean
@@ -122,6 +202,7 @@ export interface DesktopApi {
   stopSourceSync(): void
   onSourceJump(listener: (jump: SourceJump) => void): () => void
   onSourceSyncStatus(listener: (status: SourceSyncStatus) => void): () => void
+  onSourceDependencyChange(listener: (update: { documentId: string }) => void): () => void
   getSettings(): Promise<AppSettings>
   updateSettings(settings: Partial<AppSettings>): Promise<AppSettings>
   restoreSession(): Promise<DesktopSession>
@@ -134,12 +215,22 @@ export interface DesktopApi {
     previewFilePath?: string
     source: string
     version: number
+    sourceVersion: number
     openDocuments: LanguageServerDocument[]
   }): Promise<void>
   syncLanguageServerDocuments(request: {
     documentId: string
     openDocuments: LanguageServerDocument[]
   }): Promise<void>
+  completeWithLanguageServer(request: {
+    documentId: string
+    line: number
+    character: number
+    source: string
+    sourceVersion: number
+    triggerCharacter?: string
+    openDocuments: LanguageServerDocument[]
+  }): Promise<LanguageServerCompletionResult>
   compileWithLanguageServer(request: {
     documentId: string
     source: string

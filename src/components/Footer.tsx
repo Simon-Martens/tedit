@@ -9,6 +9,8 @@ export function Footer({
   onToggleCompilation,
   languageServerStatus,
   documentWatchStatus,
+  onRestartLanguageServer,
+  onRestartDocumentWatcher,
 }: {
   document?: EditorDocument
   line: number
@@ -17,6 +19,8 @@ export function Footer({
   onToggleCompilation(): void
   languageServerStatus: LanguageServerStatus
   documentWatchStatus: WatchHealthStatus
+  onRestartLanguageServer(): void
+  onRestartDocumentWatcher(): void
 }) {
   const state = document?.compileState ?? 'idle'
   const label = document
@@ -32,21 +36,45 @@ export function Footer({
           {document?.repoName ?? 'No repository'}
         </span>
         <span className="footer-separator" aria-hidden="true" />
-        <span
-          className={`footer-tinymist footer-tinymist-${languageServerStatus.state}`}
-          title={languageServerStatus.message}
-        >
-          <i aria-hidden="true" />
-          Tinymist
+        <span className="footer-service">
+          <span
+            className={`footer-tinymist footer-tinymist-${languageServerStatus.state}`}
+            title={languageServerStatus.message}
+          >
+            <i aria-hidden="true" />
+            Tinymist
+          </span>
+          <button
+            type="button"
+            className="footer-service-restart"
+            title="Restart Tinymist"
+            aria-label="Restart Tinymist"
+            disabled={!document || languageServerStatus.state === 'disabled'}
+            onClick={onRestartLanguageServer}
+          >
+            <Icon name="restart" />
+          </button>
         </span>
-        <span
-          className={`footer-tinymist footer-tinymist-${documentWatchStatus.state}`}
-          title={documentWatchStatus.message}
-          role="status"
-          aria-live="polite"
-        >
-          <i aria-hidden="true" />
-          Files
+        <span className="footer-service">
+          <span
+            className={`footer-tinymist footer-tinymist-${documentWatchStatus.state}`}
+            title={documentWatchStatus.message}
+            role="status"
+            aria-live="polite"
+          >
+            <i aria-hidden="true" />
+            File Watcher
+          </span>
+          <button
+            type="button"
+            className="footer-service-restart"
+            title="Restart file watcher"
+            aria-label="Restart file watcher"
+            disabled={documentWatchStatus.state === 'disabled'}
+            onClick={onRestartDocumentWatcher}
+          >
+            <Icon name="restart" />
+          </button>
         </span>
       </div>
       <div className="footer-compilation">

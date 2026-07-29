@@ -41,10 +41,13 @@ class TinymistLspService {
     this.lifecycleGeneration = 0
     this.openDocuments = new Map()
     this.pendingSync = undefined
+    this.syncInFlight = undefined
     this.syncDrainPromise = undefined
     this.pendingCompile = undefined
     this.compileDrainPromise = undefined
     this.exportCancellation = undefined
+    this.completionGeneration = 0
+    this.completionCancellation = undefined
   }
 
   status(documentId, state, message) {
@@ -127,13 +130,16 @@ class TinymistLspService {
       connection.onRequest('workspace/applyEdit', () => ({ applied: false }))
       connection.onNotification('textDocument/publishDiagnostics', (params) => {
         if (generation !== this.generation || params.uri !== this.activeUri) return
-        const diagnosticVersion = params.version ?? this.activeVersion
+        const diagnosticVersion = params.version ?? this.openDocuments.get(this.activeUri)?.version
         clearTimeout(this.diagnosticsTimer)
         this.diagnosticsTimer = setTimeout(() => {
-          if (generation !== this.generation || diagnosticVersion !== this.activeVersion) return
+          if (
+            generation !== this.generation
+            || diagnosticVersion !== this.openDocuments.get(this.activeUri)?.version
+          ) return
           this.sendEvent('tinymist-lsp:diagnostics', {
             documentId,
-            version: diagnosticVersion,
+            version: this.activeVersion,
             diagnostics: params.diagnostics,
           })
         }, 60)
@@ -149,6 +155,16 @@ class TinymistLspService {
         capabilities: {
           workspace: { configuration: true, workspaceFolders: true },
           textDocument: {
+            completion: {
+              completionItem: {
+                documentationFormat: ['markdown', 'plaintext'],
+                insertReplaceSupport: true,
+                snippetSupport: true,
+              },
+              completionList: {
+                itemDefaults: ['commitCharacters', 'editRange', 'insertTextFormat', 'insertTextMode', 'data'],
+              },
+            },
             publishDiagnostics: { relatedInformation: true, versionSupport: true },
             synchronization: { didSave: true },
           },
@@ -167,6 +183,7 @@ class TinymistLspService {
         filePath: this.filePath,
         source: this.source,
         version: this.version,
+        sourceVersion: this.activeVersion,
       })
       const orderedDocuments = [
         ...[...documents.values()].filter((document) => document.filePath !== this.filePath),
@@ -206,11 +223,37 @@ class TinymistLspService {
   }
 
   syncDocuments(request) {
-    this.compileGeneration += 1
-    this.exportCancellation?.cancel()
-    if (this.pendingCompile) {
-      this.pendingCompile.resolve({ cancelled: true })
-      this.pendingCompile = undefined
+    const baselineDocuments = this.pendingSync?.openDocuments ?? this.syncInFlight?.openDocuments
+    let documentsChanged
+    if (baselineDocuments) {
+      const baselineByPath = new Map(baselineDocuments.map((document) => [path.resolve(document.filePath), document]))
+      documentsChanged = baselineByPath.size !== (request.openDocuments?.length ?? 0)
+        || (request.openDocuments ?? []).some((document) => {
+          const baseline = baselineByPath.get(path.resolve(document.filePath))
+          return !baseline || baseline.version !== document.version || baseline.source !== document.source
+        })
+    } else {
+      const requestedUris = new Set()
+      documentsChanged = false
+      for (const document of request.openDocuments ?? []) {
+        const uri = pathToFileURL(path.resolve(document.filePath)).href
+        requestedUris.add(uri)
+        const current = this.openDocuments.get(uri)
+        if (!current || current.version !== document.version || current.source !== document.source) {
+          documentsChanged = true
+        }
+      }
+      for (const uri of this.openDocuments.keys()) {
+        if (uri !== this.uri && !requestedUris.has(uri)) documentsChanged = true
+      }
+    }
+    if (documentsChanged) {
+      this.compileGeneration += 1
+      this.exportCancellation?.cancel()
+      if (this.pendingCompile) {
+        this.pendingCompile.resolve({ cancelled: true })
+        this.pendingCompile = undefined
+      }
     }
     this.pendingSync = request
     this.scheduleSyncDrain()
@@ -231,7 +274,12 @@ class TinymistLspService {
     while (this.pendingSync) {
       const request = this.pendingSync
       this.pendingSync = undefined
-      await this.syncDocumentsNow(request)
+      this.syncInFlight = request
+      try {
+        await this.syncDocumentsNow(request)
+      } finally {
+        if (this.syncInFlight === request) this.syncInFlight = undefined
+      }
     }
   }
 
@@ -240,7 +288,12 @@ class TinymistLspService {
     let dependenciesChanged = false
     const nextDocuments = new Map(openDocuments.map((document) => {
       const filePath = path.resolve(document.filePath)
-      return [pathToFileURL(filePath).href, { ...document, filePath }]
+      const uri = pathToFileURL(filePath).href
+      const current = this.openDocuments.get(uri)
+      const version = current && document.version <= current.version
+        ? current.source === document.source ? current.version : current.version + 1
+        : document.version
+      return [uri, { ...document, filePath, version }]
     }))
     const requestedRoot = nextDocuments.get(this.uri)
     if (requestedRoot) {
@@ -254,6 +307,7 @@ class TinymistLspService {
         filePath: this.filePath,
         source: this.source,
         version: this.version,
+        sourceVersion: this.activeVersion,
       })
     }
 
@@ -279,6 +333,8 @@ class TinymistLspService {
         })
         if (uri !== this.uri) dependenciesChanged = true
       } else if (current.version !== next.version || current.source !== next.source) {
+        const sourceChanged = current.source !== next.source
+          || (current.sourceVersion ?? current.version) !== (next.sourceVersion ?? next.version)
         await this.connection.sendNotification('textDocument/didChange', {
           textDocument: { uri, version: next.version },
           contentChanges: [{ text: next.source }],
@@ -288,11 +344,11 @@ class TinymistLspService {
           this.version = next.version
           this.sentVersion = next.version
         } else {
-          dependenciesChanged = true
+          dependenciesChanged = dependenciesChanged || sourceChanged
         }
       }
       this.openDocuments.set(uri, next)
-      if (uri === this.activeUri) this.activeVersion = next.version
+      if (uri === this.activeUri) this.activeVersion = next.sourceVersion ?? next.version
     }
     if (emitDependencyChange && dependenciesChanged) {
       this.sendEvent('tinymist-lsp:dependency-change', { documentId })
@@ -308,6 +364,45 @@ class TinymistLspService {
     })
     this.scheduleCompileDrain()
     return result
+  }
+
+  async complete({ documentId, line, character, triggerCharacter, source, sourceVersion, openDocuments = [] }) {
+    const completionGeneration = ++this.completionGeneration
+    this.completionCancellation?.cancel()
+    const activeDocumentOpen = openDocuments.some((document) => path.resolve(document.filePath) === this.activeFilePath)
+    const currentActiveDocument = this.openDocuments.get(this.activeUri)
+    const completionDocuments = activeDocumentOpen ? openDocuments : [...openDocuments, {
+      documentId,
+      filePath: this.activeFilePath,
+      source,
+      version: currentActiveDocument?.version ?? sourceVersion,
+      sourceVersion,
+    }]
+    await this.syncDocuments({ documentId, openDocuments: completionDocuments })
+    if (
+      completionGeneration !== this.completionGeneration
+      || documentId !== this.documentId
+      || !this.connection
+      || !this.open
+    ) return null
+    const cancellation = new CancellationTokenSource()
+    this.completionCancellation = cancellation
+    try {
+      return await this.connection.sendRequest('textDocument/completion', {
+        textDocument: { uri: this.activeUri },
+        position: { line, character },
+        context: {
+          triggerKind: triggerCharacter ? 2 : 1,
+          ...(triggerCharacter ? { triggerCharacter } : {}),
+        },
+      }, cancellation.token)
+    } catch (error) {
+      if (completionGeneration !== this.completionGeneration || cancellation.token.isCancellationRequested) return null
+      throw error
+    } finally {
+      if (this.completionCancellation === cancellation) this.completionCancellation = undefined
+      cancellation.dispose()
+    }
   }
 
   scheduleCompileDrain() {
@@ -349,6 +444,7 @@ class TinymistLspService {
         filePath: this.activeFilePath,
         source,
         version,
+        sourceVersion: version,
       }]
       : openDocuments
     await this.syncDocumentsNow({ documentId, openDocuments: compileDocuments }, false)
@@ -437,7 +533,11 @@ class TinymistLspService {
   cancelPendingWork() {
     this.compileGeneration += 1
     this.pendingSync = undefined
+    this.syncInFlight = undefined
     this.exportCancellation?.cancel()
+    this.completionGeneration += 1
+    this.completionCancellation?.cancel()
+    this.completionCancellation = undefined
     if (this.pendingCompile) {
       this.pendingCompile.resolve({ cancelled: true })
       this.pendingCompile = undefined

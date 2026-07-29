@@ -1,7 +1,7 @@
 export type IconName =
   | 'open' | 'save' | 'download' | 'file' | 'plus' | 'minus' | 'close' | 'expand' | 'collapse'
   | 'previous' | 'next' | 'zoomIn' | 'zoomOut' | 'fitWidth' | 'fitPage' | 'rotate' | 'print'
-  | 'settings' | 'search' | 'replace' | 'undo' | 'redo' | 'help'
+  | 'settings' | 'search' | 'replace' | 'undo' | 'redo' | 'help' | 'restart'
 
 export function Icon({ name }: { name: IconName }) {
   const paths = {
@@ -30,6 +30,7 @@ export function Icon({ name }: { name: IconName }) {
     replace: <path d="M4 7h13m-3-3 3 3-3 3m6 7H7m3-3-3 3 3 3" />,
     undo: <path d="M9 7 5 11l4 4m-4-4h8a6 6 0 0 1 6 6" />,
     redo: <path d="m15 7 4 4-4 4m4-4h-8a6 6 0 0 0-6 6" />,
+    restart: <path d="M19 8V4m0 0h-4m4 0-3 3a7 7 0 1 0 1.5 7.5" />,
     help: <path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Zm-2.3-11.7A2.5 2.5 0 0 1 12.2 7c1.5 0 2.7.9 2.7 2.3 0 1.8-1.5 2.2-2.4 3-.5.4-.6.8-.6 1.4M12 17h.01" />,
   }
 

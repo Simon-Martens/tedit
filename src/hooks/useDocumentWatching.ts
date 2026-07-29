@@ -24,6 +24,7 @@ export function useDocumentWatching({
   sessionKey,
 }: DocumentWatchingOptions) {
   const [status, setStatus] = useState<WatchHealthStatus>(disabledStatus)
+  const [restartGeneration, setRestartGeneration] = useState(0)
   const requestRef = useRef(0)
   const conflictQueueRef = useRef(Promise.resolve())
 
@@ -44,7 +45,7 @@ export function useDocumentWatching({
           requestedDirectories: 0,
         })
       })
-  }, [sessionRestored, sessionKey])
+  }, [sessionRestored, sessionKey, restartGeneration])
 
   useEffect(() => window.typstDesktop?.onDocumentWatchStatus(setStatus), [])
 
@@ -117,5 +118,8 @@ export function useDocumentWatching({
     })
   }, [])
 
-  return status
+  return {
+    status,
+    restart: () => setRestartGeneration((current) => current + 1),
+  }
 }

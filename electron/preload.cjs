@@ -15,6 +15,14 @@ contextBridge.exposeInMainWorld('typstDesktop', {
     return () => ipcRenderer.removeListener('document:change', handler)
   },
   resolveDocumentConflict: (request) => ipcRenderer.invoke('document:resolve-conflict', request),
+  discoverBibliographies: (request) => ipcRenderer.invoke('bibliography:discover', request),
+  saveBibliography: (request) => ipcRenderer.invoke('bibliography:save', request),
+  onBibliographyChange: (listener) => {
+    const handler = (_event, payload) => listener(payload)
+    ipcRenderer.on('bibliography:change', handler)
+    return () => ipcRenderer.removeListener('bibliography:change', handler)
+  },
+  stopBibliographies: (request) => ipcRenderer.send('bibliography:stop', request),
   saveRecovery: (session) => ipcRenderer.invoke('recovery:save', session),
   clearRecovery: () => ipcRenderer.invoke('recovery:clear'),
   onAppCloseRequested: (listener) => {
@@ -46,8 +54,14 @@ contextBridge.exposeInMainWorld('typstDesktop', {
     ipcRenderer.on('tinymist:status', handler)
     return () => ipcRenderer.removeListener('tinymist:status', handler)
   },
+  onSourceDependencyChange: (listener) => {
+    const handler = (_event, payload) => listener(payload)
+    ipcRenderer.on('tinymist:dependency-change', handler)
+    return () => ipcRenderer.removeListener('tinymist:dependency-change', handler)
+  },
   startLanguageServer: (request) => ipcRenderer.invoke('tinymist-lsp:start', request),
   syncLanguageServerDocuments: (request) => ipcRenderer.invoke('tinymist-lsp:sync-documents', request),
+  completeWithLanguageServer: (request) => ipcRenderer.invoke('tinymist-lsp:complete', request),
   compileWithLanguageServer: (request) => ipcRenderer.invoke('tinymist-lsp:compile', request),
   stopLanguageServer: () => ipcRenderer.send('tinymist-lsp:stop'),
   onLanguageServerStatus: (listener) => {

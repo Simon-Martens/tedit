@@ -10,7 +10,7 @@ interface ShortcutCommands {
 export function useShortcuts(commands: ShortcutCommands) {
   useEffect(() => {
     const handleShortcut = (event: KeyboardEvent) => {
-      if (!(event.ctrlKey || event.metaKey)) return
+      if (event.defaultPrevented || !(event.ctrlKey || event.metaKey)) return
       const key = event.key.toLowerCase()
       if (key === 'o') {
         event.preventDefault()

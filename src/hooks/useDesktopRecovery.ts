@@ -19,13 +19,19 @@ export function useDesktopRecovery(
   editor: EditorDocumentsController,
   persistenceEnabled: boolean,
   saveDesktopDocument: (document: EditorDocument) => Promise<boolean>,
+  auxiliary?: {
+    getDirtyNames(): string[]
+    saveAll(): Promise<boolean>
+  },
 ) {
   const recoveryTimerRef = useRef<number | undefined>(undefined)
   const closingRef = useRef(false)
   const editorRef = useRef(editor)
   const saveDesktopDocumentRef = useRef(saveDesktopDocument)
+  const auxiliaryRef = useRef(auxiliary)
   editorRef.current = editor
   saveDesktopDocumentRef.current = saveDesktopDocument
+  auxiliaryRef.current = auxiliary
   const recoveryKey = editor.documents
     .filter((document) => document.isDirty || !document.filePath)
     .map((document) => `${document.id}\0${document.filePath ?? ''}\0${document.sourceRevision}`)
@@ -71,7 +77,8 @@ export function useDesktopRecovery(
           desktop.completeAppClose(false)
         }
         const recoverable = currentEditor.getDocuments().filter((document) => document.isDirty || !document.filePath)
-        if (!recoverable.length) {
+        const auxiliaryDirtyNames = auxiliaryRef.current?.getDirtyNames() ?? []
+        if (!recoverable.length && !auxiliaryDirtyNames.length) {
           try {
             await desktop.clearRecovery()
             desktop.completeAppClose(true)
@@ -82,7 +89,7 @@ export function useDesktopRecovery(
           return
         }
         const resolution = await desktop.resolveAppClose({
-          dirtyNames: recoverable.map(({ fileName }) => fileName),
+          dirtyNames: [...recoverable.map(({ fileName }) => fileName), ...auxiliaryDirtyNames],
         }).catch((error) => {
           reportError('close-resolution', error)
           return 'cancel' as const
@@ -98,8 +105,15 @@ export function useDesktopRecovery(
               return
             }
           }
+          if (auxiliaryRef.current && !await auxiliaryRef.current.saveAll()) {
+            await cancelClose()
+            return
+          }
           await new Promise((resolve) => window.setTimeout(resolve, 0))
-          if (currentEditor.getDocuments().some((document) => document.isDirty || !document.filePath)) {
+          if (
+            currentEditor.getDocuments().some((document) => document.isDirty || !document.filePath)
+            || (auxiliaryRef.current?.getDirtyNames().length ?? 0) > 0
+          ) {
             await cancelClose()
             return
           }

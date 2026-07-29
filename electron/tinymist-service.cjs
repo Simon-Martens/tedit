@@ -129,6 +129,7 @@ class TinymistService {
       this.controlSocket = controlSocket
       dataSocket.on('message', (data, isBinary) => this.handleDataMessage(data, isBinary, generation, documentId))
       controlSocket.on('message', (data) => this.handleControlMessage(data.toString(), generation, documentId))
+      this.markMemoryUpdatePending()
       this.sendMemoryFiles('syncMemoryFiles')
       dataSocket.send('current')
       this.status(documentId, 'ready', 'Source synchronization ready.')
@@ -150,7 +151,10 @@ class TinymistService {
     } catch {
       return
     }
-    if (message.event === 'syncEditorChanges') this.sendMemoryFiles('syncMemoryFiles')
+    if (message.event === 'syncEditorChanges') {
+      this.markMemoryUpdatePending()
+      this.sendMemoryFiles('syncMemoryFiles')
+    }
     if (message.event === 'compileStatus') {
       if (message.kind === 'CompileSuccess') {
         this.status(this.documentId, 'ready', 'Source synchronization ready.')
@@ -160,7 +164,15 @@ class TinymistService {
         this.status(this.documentId, 'starting', 'Updating source positions...')
       }
       if (message.kind === 'CompileSuccess' || message.kind === 'CompileError') {
-        this.sendEvent('tinymist-lsp:dependency-change', { documentId: this.documentId })
+        if (this.memoryUpdatePending) {
+          clearTimeout(this.memoryUpdateSettleTimer)
+          this.memoryUpdateSettleTimer = setTimeout(() => {
+            this.memoryUpdatePending = false
+            this.memoryUpdateSettleTimer = undefined
+          }, 180)
+        } else {
+          this.sendEvent('tinymist:dependency-change', { documentId: this.documentId })
+        }
       }
     }
   }
@@ -184,9 +196,16 @@ class TinymistService {
     this.controlSocket.send(JSON.stringify({ event, files: Object.fromEntries(this.memoryFiles) }))
   }
 
+  markMemoryUpdatePending() {
+    this.memoryUpdatePending = true
+    clearTimeout(this.memoryUpdateSettleTimer)
+    this.memoryUpdateSettleTimer = undefined
+  }
+
   update({ documentId, memoryFiles = [] }) {
     if (documentId !== this.documentId) return
     this.memoryFiles = new Map(memoryFiles.map((file) => [path.resolve(file.filePath), file.source]))
+    this.markMemoryUpdatePending()
     this.sendMemoryFiles('updateMemoryFiles')
   }
 
@@ -230,6 +249,9 @@ class TinymistService {
     this.controlSocket = undefined
     clearTimeout(this.locateSettleTimer)
     this.locateSettleTimer = undefined
+    clearTimeout(this.memoryUpdateSettleTimer)
+    this.memoryUpdateSettleTimer = undefined
+    this.memoryUpdatePending = false
     const child = this.child
     this.child = undefined
     if (child && child.exitCode === null) {
@@ -250,6 +272,8 @@ class TinymistService {
     this.controlSocket = undefined
     clearTimeout(this.locateSettleTimer)
     this.locateSettleTimer = undefined
+    clearTimeout(this.memoryUpdateSettleTimer)
+    this.memoryUpdateSettleTimer = undefined
     this.latestLocate = undefined
     const child = this.child
     this.child = undefined
@@ -257,6 +281,7 @@ class TinymistService {
     this.filePath = undefined
     this.sourceFilePath = undefined
     this.memoryFiles = new Map()
+    this.memoryUpdatePending = false
     if (child && child.exitCode === null) {
       child.teditExpectedExit = true
       const exited = new Promise((resolve) => child.once('exit', resolve))

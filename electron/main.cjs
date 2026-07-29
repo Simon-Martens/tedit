@@ -1,6 +1,7 @@
 const { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, net, protocol, session } = require('electron')
 const path = require('node:path')
 const { pathToFileURL } = require('node:url')
+const { createBibliographyIpc } = require('./bibliography-ipc.cjs')
 const { createDocumentFileIpc, getGitMetadata } = require('./document-file-ipc.cjs')
 const { createDocumentRegistry } = require('./document-registry.cjs')
 const { createDocumentWatcher, registerDocumentWatchIpc } = require('./document-watching.cjs')
@@ -53,6 +54,12 @@ const previewDiscovery = createPreviewDiscovery({
   registry,
   workerPath: path.join(__dirname, 'preview-root-discovery-worker.cjs'),
 })
+const bibliographyIpc = createBibliographyIpc({
+  handleIpc,
+  isAllowedPreviewRoot: previewDiscovery.isAllowedPreviewRoot,
+  onIpc,
+  registry,
+})
 const tinymistController = createTinymistIpcController({
   app,
   handleIpc,
@@ -69,6 +76,7 @@ const windowLifecycle = createWindowLifecycle({
   handleIpc,
   isDevelopment,
   onIpc,
+  stopBibliography: bibliographyIpc.revokeForWebContents,
   stopPreviewDiscovery: previewDiscovery.stopForWebContents,
   trustedWebContentsIds,
 })
@@ -111,6 +119,7 @@ if (!app.requestSingleInstanceLock()) {
 
 app.on('window-all-closed', () => {
   watcher.stop()
+  bibliographyIpc.stopAll()
   previewDiscovery.stopAll()
   void Promise.all([
     tinymistController.stop(),
@@ -121,3 +130,5 @@ app.on('window-all-closed', () => {
     else if (process.platform !== 'darwin') app.quit()
   })
 })
+
+app.on('will-quit', () => bibliographyIpc.stopAll())

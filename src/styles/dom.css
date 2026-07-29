@@ -226,6 +226,46 @@ a:focus-visible {
   gap: 5px;
 }
 
+.footer-service {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 3px;
+}
+
+.footer-service-restart {
+  display: grid;
+  width: 17px;
+  height: 17px;
+  padding: 0;
+  place-items: center;
+  border: 0;
+  border-radius: 3px;
+  color: #85897e;
+  background: transparent;
+  cursor: pointer;
+}
+
+.footer-service-restart:hover:not(:disabled),
+.footer-service-restart:focus-visible {
+  color: #e3e5dd;
+  background: #34362f;
+}
+
+.footer-service-restart:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.footer-service-restart svg {
+  width: 12px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+
 .footer-tinymist i {
   width: 7px;
   height: 7px;
@@ -805,6 +845,30 @@ a:focus-visible {
   grid-template-rows: minmax(180px, 1fr) 1px auto;
 }
 
+.editor-stack {
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.editor-stack.bibliography-open {
+  grid-template-rows: minmax(120px, var(--source-editor-size)) 6px minmax(120px, 1fr);
+}
+
+.editor-stack.bibliography-maximized {
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.editor-stack.bibliography-maximized > .source-panel {
+  display: none;
+}
+
+.editor-stack.bibliography-maximized > .bibliography-panel {
+  grid-row: 1;
+}
+
 .output-auto-divider {
   background: var(--color-border);
 }
@@ -815,6 +879,7 @@ a:focus-visible {
 }
 
 .source-panel,
+.bibliography-panel,
 .output-panel,
 .preview-panel {
   display: grid;
@@ -1137,7 +1202,8 @@ a:focus-visible {
   }
 
   .workspace,
-  .left-pane {
+  .left-pane,
+  .editor-stack {
     display: block;
   }
 
@@ -1152,5 +1218,14 @@ a:focus-visible {
   .output-panel {
     height: 230px;
     border-bottom: 1px solid var(--color-border);
+  }
+
+  .bibliography-panel {
+    height: 48vh;
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  .bibliography-maximized .bibliography-panel {
+    height: 60vh;
   }
 }

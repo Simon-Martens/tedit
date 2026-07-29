@@ -9,6 +9,7 @@ function createWindowLifecycle({
   handleIpc,
   isDevelopment,
   onIpc,
+  stopBibliography,
   stopPreviewDiscovery,
   trustedWebContentsIds,
 }) {
@@ -113,6 +114,7 @@ function createWindowLifecycle({
       clearTimeout(closeState.timeout)
       windowCloseStates.delete(window.id)
       trustedWebContentsIds.delete(webContentsId)
+      stopBibliography(webContentsId)
       stopPreviewDiscovery(webContentsId)
     })
 
@@ -152,6 +154,7 @@ function createWindowLifecycle({
     })
     window.webContents.on('render-process-gone', (_event, details) => {
       logFailure('renderer-gone', new Error(details.reason), details)
+      stopBibliography(webContentsId)
       stopPreviewDiscovery(webContentsId)
     })
     window.webContents.on('before-input-event', (event, input) => {

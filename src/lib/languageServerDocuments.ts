@@ -5,6 +5,7 @@ export function toLanguageServerDocuments(documents: EditorDocument[]): Language
     documentId: document.id,
     filePath: document.filePath,
     source: document.source,
-    version: document.sourceRevision,
+    version: document.sourceRevision + document.dependencyRevision,
+    sourceVersion: document.sourceRevision,
   }] : [])
 }

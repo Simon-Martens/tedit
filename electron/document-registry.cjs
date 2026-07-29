@@ -39,6 +39,7 @@ function createDocumentRegistry() {
         || !document.filePath
         || typeof document.source !== 'string'
         || !Number.isSafeInteger(document.version)
+        || !Number.isSafeInteger(document.sourceVersion)
       ) return []
       const filePath = normalizeDocumentPath(document.filePath)
       if (!allowedDocumentPaths.has(filePath)) return []
@@ -47,6 +48,7 @@ function createDocumentRegistry() {
         filePath,
         source: document.source,
         version: document.version,
+        sourceVersion: document.sourceVersion,
       }]
     })
   }

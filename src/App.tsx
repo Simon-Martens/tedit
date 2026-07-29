@@ -6,6 +6,7 @@ import { TabBar } from './components/TabBar'
 import { Toolbar } from './components/Toolbar'
 import { Workspace } from './components/Workspace'
 import { useCompilationView } from './hooks/useCompilationView'
+import { useBibliographies } from './hooks/useBibliographies'
 import { useDesktopRecovery } from './hooks/useDesktopRecovery'
 import { useDesktopSession } from './hooks/useDesktopSession'
 import { useDocumentTitle } from './hooks/useDocumentTitle'
@@ -19,6 +20,7 @@ import { useSourcePreviewSync } from './hooks/useSourcePreviewSync'
 import { useTinymistLanguageServer } from './hooks/useTinymistLanguageServer'
 import { useTypstCompilation } from './hooks/useTypstCompilation'
 import { createDocument, createPdfFilename } from './lib/documents'
+import { toLanguageServerDocuments } from './lib/languageServerDocuments'
 
 function App() {
   const editor = useEditorDocuments()
@@ -27,7 +29,7 @@ function App() {
   const [docsOpen, setDocsOpen] = useState(false)
   const [docsMounted, setDocsMounted] = useState(false)
   const compilation = useCompilationView(editor.activeDocument)
-  const languageServerStatus = useTinymistLanguageServer(
+  const languageServer = useTinymistLanguageServer(
     editor.activeDocument,
     editor.documents,
     editor.updateDocument,
@@ -36,7 +38,7 @@ function App() {
     editor.activeDocument,
     editor.documents,
     editor.updateDocument,
-    languageServerStatus,
+    languageServer.status,
   )
   const sourcePreviewSync = useSourcePreviewSync(
     editor.activeDocument,
@@ -45,21 +47,26 @@ function App() {
   )
   const files = useFileCommands(editor)
   const desktopSession = useDesktopSession(editor)
-  useDesktopRecovery(editor, desktopSession.persistenceEnabled, files.saveDesktopDocument)
-  const documentWatchStatus = useDocumentWatching({
+  const bibliographies = useBibliographies(editor)
+  useDesktopRecovery(editor, desktopSession.persistenceEnabled, files.saveDesktopDocument, bibliographies)
+  const documentWatcher = useDocumentWatching({
     editor,
     sessionRestored: desktopSession.restored,
     sessionFilePaths: desktopSession.filePaths,
     sessionKey: desktopSession.filePathsKey,
   })
   const previewRoots = usePreviewRootDiscovery(editor)
+  const closeDocument = (id: string) => editor.closeDocument(
+    id,
+    () => bibliographies.prepareDocumentClose(id),
+  )
 
   useDocumentTitle(editor.activeDocument)
   useShortcuts({
     open: () => void files.openFile(),
     save: () => void files.saveFile(),
     create: () => editor.addDocument(createDocument()),
-    close: () => editor.closeDocument(editor.activeId),
+    close: () => closeDocument(editor.activeId),
   })
 
   useEffect(() => {
@@ -105,7 +112,7 @@ function App() {
         documents={editor.documents}
         activeId={editor.activeId}
         onActivate={editor.activateDocument}
-        onClose={editor.closeDocument}
+        onClose={closeDocument}
         onNew={() => editor.addDocument(createDocument())}
         onReorder={editor.reorderDocuments}
       />
@@ -113,13 +120,11 @@ function App() {
         <Workspace
           document={editor.activeDocument}
           previewRoots={previewRoots.roots}
-          previewRootStatus={previewRoots.status}
           onPreviewRootChange={(filePath) => editor.changePreviewRoot(editor.activeDocument!, filePath)}
           onSourceChange={(source) => editor.changeSource(editor.activeDocument!, source)}
           vimEnabled={settings.vimEnabled}
           previewPositions={sourcePreviewSync.positions}
           sourceCursorLocation={sourcePreviewSync.sourceCursorLocation}
-          sourceSyncStatus={sourcePreviewSync.status}
           onCursorPositionChange={sourcePreviewSync.locate}
           onCursorChange={(line, column) => setCursorPosition({ line, column })}
           showPreviewPosition={settings.showPreviewPosition}
@@ -129,6 +134,8 @@ function App() {
           compilationOpen={compilation.open}
           compilationAutoSized={compilation.mode === 'error'}
           onSave={() => void files.saveFile()}
+          bibliographies={bibliographies}
+          languageServerDocuments={toLanguageServerDocuments(editor.documents)}
         />
       ) : (
         <EmptyWorkspace onCreate={editor.addDocument} />
@@ -139,8 +146,10 @@ function App() {
         column={cursorPosition.column}
         compilationOpen={compilation.open}
         onToggleCompilation={compilation.toggle}
-        languageServerStatus={languageServerStatus}
-        documentWatchStatus={documentWatchStatus}
+        languageServerStatus={languageServer.status}
+        documentWatchStatus={documentWatcher.status}
+        onRestartLanguageServer={languageServer.restart}
+        onRestartDocumentWatcher={documentWatcher.restart}
       />
       {docsMounted && <DocsView open={docsOpen} onClose={() => setDocsOpen(false)} />}
     </main>

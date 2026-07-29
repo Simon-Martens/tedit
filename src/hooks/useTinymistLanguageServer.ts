@@ -34,6 +34,7 @@ export function useTinymistLanguageServer(
   const [status, setStatus] = useState<LanguageServerStatus>(DISABLED_STATUS)
   const [retryGeneration, setRetryGeneration] = useState(0)
   const documentRef = useRef(document)
+  const dependencyRestartTimerRef = useRef<number | undefined>(undefined)
   const failedRevisionRef = useRef<number | undefined>(undefined)
   const updateRef = useRef(updateDocument)
   documentRef.current = document
@@ -88,12 +89,26 @@ export function useTinymistLanguageServer(
         dependencyRevision: current.dependencyRevision + 1,
       })
     })
+    const removeSourceDependencyListener = desktop.onSourceDependencyChange((update) => {
+      if (update.documentId !== documentId || documentRef.current?.id !== documentId) return
+      window.clearTimeout(dependencyRestartTimerRef.current)
+      dependencyRestartTimerRef.current = window.setTimeout(() => {
+        dependencyRestartTimerRef.current = undefined
+        const current = documentRef.current
+        if (current?.id !== documentId) return
+        updateRef.current(documentId, {
+          dependencyRevision: current.dependencyRevision + 1,
+          messages: ['Reloaded external Typst dependencies.'],
+        })
+      }, 180)
+    })
     void desktop.startLanguageServer({
       documentId,
       filePath: document.filePath,
       previewFilePath: document.previewRootPath,
       source: document.source,
-      version: document.sourceRevision,
+      version: document.sourceRevision + document.dependencyRevision,
+      sourceVersion: document.sourceRevision,
       openDocuments,
     }).catch((error) => {
       setStatus({
@@ -107,6 +122,9 @@ export function useTinymistLanguageServer(
       removeStatusListener()
       removeDiagnosticsListener()
       removeDependencyListener()
+      removeSourceDependencyListener()
+      window.clearTimeout(dependencyRestartTimerRef.current)
+      dependencyRestartTimerRef.current = undefined
       desktop.stopLanguageServer()
       updateRef.current(documentId, { languageServerDiagnostics: undefined })
     }
@@ -133,5 +151,8 @@ export function useTinymistLanguageServer(
     }).catch((error) => reportError('tinymist-document-sync', error))
   }, [document?.id, document?.filePath, openDocumentsKey, status.documentId, status.state])
 
-  return status
+  return {
+    status,
+    restart: () => setRetryGeneration((current) => current + 1),
+  }
 }

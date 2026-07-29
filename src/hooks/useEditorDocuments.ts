@@ -9,7 +9,7 @@ export interface EditorDocumentsController {
   getActiveId(): string
   activateDocument(id: string): void
   addDocument(document: EditorDocument): void
-  closeDocument(id: string): void
+  closeDocument(id: string, beforeClose?: () => boolean): void
   reorderDocuments(draggedId: string, targetId: string, after: boolean): void
   updateDocument(id: string, update: Partial<EditorDocument>): void
   transformDocuments(transform: (documents: EditorDocument[]) => EditorDocument[]): void
@@ -77,9 +77,15 @@ export function useEditorDocuments(): EditorDocumentsController {
   }
 
   const changePreviewRoot = (document: EditorDocument, filePath: string) => {
+    if (filePath === (document.previewRootPath ?? document.filePath)) return
+    if (document.pdfUrl) URL.revokeObjectURL(document.pdfUrl)
     updateDocument(document.id, {
       previewRootPath: filePath === document.filePath ? undefined : filePath,
       dependencyRevision: document.dependencyRevision + 1,
+      attemptedDependencyRevision: undefined,
+      compileState: 'loading',
+      compileDurationMs: undefined,
+      pdfUrl: undefined,
     })
   }
 
@@ -88,11 +94,12 @@ export function useEditorDocuments(): EditorDocumentsController {
     setActiveId(document.id)
   }
 
-  const closeDocument = (id: string) => {
+  const closeDocument = (id: string, beforeClose?: () => boolean) => {
     const index = documents.findIndex((document) => document.id === id)
     const closing = documents[index]
     if (!closing) return
     if (closing.isDirty && !window.confirm(`Close ${closing.fileName} without saving?`)) return
+    if (beforeClose && !beforeClose()) return
     if (closing.pdfUrl) URL.revokeObjectURL(closing.pdfUrl)
 
     if (documents.length === 1) {
