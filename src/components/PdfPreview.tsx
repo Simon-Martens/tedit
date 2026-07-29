@@ -11,7 +11,8 @@ import {
 } from 'pdfjs-dist'
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import { createPdfFilename } from '../lib/documents'
-import type { EditorDocument, PreviewPosition, SourceCursorLocation, SourceSyncStatus } from '../types'
+import { reportError } from '../lib/logging'
+import type { EditorDocument, PreviewPosition, PreviewRoot, SourceCursorLocation, SourceSyncStatus } from '../types'
 import { PdfToolbar, type PdfZoom } from './PdfToolbar'
 
 GlobalWorkerOptions.workerSrc = pdfWorkerUrl
@@ -145,8 +146,26 @@ function canvasPosition(canvas: HTMLCanvasElement) {
   }
 }
 
+function splitPreviewPath(value: string) {
+  const separator = value.lastIndexOf('/')
+  return separator < 0
+    ? { directory: '', fileName: value }
+    : { directory: value.slice(0, separator), fileName: value.slice(separator + 1) }
+}
+
+function compactPreviewPath(value: string, maximumLength = 48) {
+  if (value.length <= maximumLength) return value
+  const { directory, fileName } = splitPreviewPath(value)
+  if (!directory) return fileName
+  const availableDirectoryLength = Math.max(0, maximumLength - fileName.length - 5)
+  const visibleDirectory = directory.slice(0, availableDirectoryLength).replace(/\/+$/, '')
+  return `${visibleDirectory ? `${visibleDirectory}/` : ''}.../${fileName}`
+}
+
 export function PdfPreview({
   document,
+  previewRoots,
+  onPreviewRootChange,
   positions,
   sourceCursorLocation,
   sourceSyncStatus,
@@ -154,6 +173,8 @@ export function PdfPreview({
   autoScrollEnabled,
 }: {
   document: EditorDocument
+  previewRoots?: PreviewRoot[]
+  onPreviewRootChange(filePath: string): void
   positions: PreviewPosition[]
   sourceCursorLocation?: SourceCursorLocation
   sourceSyncStatus: SourceSyncStatus
@@ -239,7 +260,7 @@ export function PdfPreview({
       })
       setLoadedPdfUrl(url)
       setPageNumber((current) => Math.min(current, nextPdf.numPages))
-    }).catch(() => undefined)
+    }).catch((error) => reportError('pdf-load', error))
 
     return () => {
       cancelled = true
@@ -374,6 +395,7 @@ export function PdfPreview({
 
     void render().catch((error) => {
       if (error instanceof Error && error.name === 'RenderingCancelledException') return
+      reportError('pdf-render', error)
     })
     return () => {
       renderTaskRef.current?.cancel()
@@ -430,7 +452,7 @@ export function PdfPreview({
         marker.style.left = `${position.left + 7}px`
         marker.style.top = `${top}px`
         marker.classList.add('visible')
-      }).catch(() => undefined)
+      }).catch((error) => reportError('pdf-text-extraction', error))
       return () => {
         cancelled = true
       }
@@ -488,7 +510,7 @@ export function PdfPreview({
       void textTokens.then((tokens) => {
         const refinedY = refinedTextY(tokens, signature, { x: position.x, y: position.y })
         if (refinedY !== undefined) placeMarker(refinedY)
-      }).catch(() => undefined)
+      }).catch((error) => reportError('pdf-source-search', error))
     }
     return () => {
       cancelled = true
@@ -543,7 +565,7 @@ export function PdfPreview({
     <section className="preview-panel" aria-label="PDF preview">
       <div className="panel-heading preview-heading">
         <span className="preview-title">
-          PDF Preview
+          <span className="preview-label">PDF Preview</span>
           {isUpdating && displayedUrl ? (
             <i className="preview-spinner" title="Updating PDF preview" />
           ) : (
@@ -551,6 +573,36 @@ export function PdfPreview({
               className={`source-sync-indicator ${sourceSyncStatus.state}`}
               title={sourceSyncStatus.message}
             />
+          )}
+          {previewRoots?.length === 1 && (
+            <span className="preview-root-name" title={previewRoots[0].filePath}>
+              {splitPreviewPath(previewRoots[0].relativePath).directory && (
+                <>
+                  <span className="preview-root-directory">
+                    {splitPreviewPath(previewRoots[0].relativePath).directory}
+                  </span>
+                  <span className="preview-root-separator">/</span>
+                </>
+              )}
+              <span className="preview-root-filename">
+                {splitPreviewPath(previewRoots[0].relativePath).fileName}
+              </span>
+            </span>
+          )}
+          {previewRoots && previewRoots.length > 1 && document.filePath && (
+            <select
+              className="preview-root-select"
+              aria-label="Document to compile for PDF preview"
+              title="Document to compile for PDF preview"
+              value={document.previewRootPath ?? document.filePath}
+              onChange={(event) => onPreviewRootChange(event.target.value)}
+            >
+              {previewRoots.map((root) => (
+                <option key={root.filePath} value={root.filePath}>
+                  {compactPreviewPath(root.relativePath)}{root.filePath === document.filePath ? ' (current)' : ''}
+                </option>
+              ))}
+            </select>
           )}
         </span>
         <PdfToolbar

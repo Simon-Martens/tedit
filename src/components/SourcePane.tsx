@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import Editor, { type OnMount } from '@monaco-editor/react'
 import { initVimMode, VimMode, type VimAdapterInstance } from 'monaco-vim'
 import { configureTypstLanguage, getTypstFoldingRanges } from '../lib/typstLanguage'
+import { reportError } from '../lib/logging'
 import type { EditorDocument, SourceCursorLocation } from '../types'
 import { Icon } from './Icon'
 
@@ -32,7 +33,7 @@ function createClipboardRegister(): VimRegister {
       register.blockwise = blockwise
       fallbackClipboard = text
       if (window.typstDesktop) window.typstDesktop.writeClipboard(text)
-      else void navigator.clipboard?.writeText(text).catch(() => undefined)
+      else void navigator.clipboard?.writeText(text).catch((error) => reportError('clipboard-write', error))
     },
     pushText(text, linewise = false) {
       register.setText(`${register.toString()}${text}`, register.linewise || linewise, register.blockwise)
@@ -448,7 +449,7 @@ export function SourcePane({
           beforeMount={configureTypstLanguage}
           language="typst"
           path={`tedit://${document.id}.typ`}
-          defaultValue={document.source}
+          value={document.source}
           onChange={(value) => onChange(value ?? '')}
           theme={lightThemeEnabled ? 'vs' : 'vs-dark'}
           loading={<div className="editor-loading">Loading Monaco editor...</div>}

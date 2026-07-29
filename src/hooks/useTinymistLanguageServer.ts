@@ -4,6 +4,8 @@ import type {
   LanguageServerDiagnostic,
   LanguageServerStatus,
 } from '../types'
+import { reportError } from '../lib/logging'
+import { toLanguageServerDocuments } from '../lib/languageServerDocuments'
 
 const DISABLED_STATUS: LanguageServerStatus = {
   documentId: '',
@@ -26,6 +28,7 @@ function toEditorDiagnostic(diagnostic: LanguageServerDiagnostic) {
 
 export function useTinymistLanguageServer(
   document: EditorDocument | undefined,
+  documents: EditorDocument[],
   updateDocument: (id: string, update: Partial<EditorDocument>) => void,
 ) {
   const [status, setStatus] = useState<LanguageServerStatus>(DISABLED_STATUS)
@@ -35,6 +38,10 @@ export function useTinymistLanguageServer(
   const updateRef = useRef(updateDocument)
   documentRef.current = document
   updateRef.current = updateDocument
+  const openDocuments = toLanguageServerDocuments(documents)
+  const openDocumentsKey = openDocuments
+    .map(({ documentId, filePath, version }) => `${documentId}\0${filePath}\0${version}`)
+    .join('\u0001')
 
   useEffect(() => {
     const desktop = window.typstDesktop
@@ -55,6 +62,12 @@ export function useTinymistLanguageServer(
         updateRef.current(documentId, { languageServerDiagnostics: undefined })
       } else if (nextStatus.state === 'ready') {
         failedRevisionRef.current = undefined
+        const current = documentRef.current
+        if (current?.id === documentId) {
+          updateRef.current(documentId, {
+            dependencyRevision: current.dependencyRevision + 1,
+          })
+        }
       }
     })
     const removeDiagnosticsListener = desktop.onLanguageServerDiagnostics((update) => {
@@ -68,11 +81,20 @@ export function useTinymistLanguageServer(
         languageServerDiagnostics: update.diagnostics.map(toEditorDiagnostic),
       })
     })
+    const removeDependencyListener = desktop.onLanguageServerDependencyChange((update) => {
+      const current = documentRef.current
+      if (update.documentId !== documentId || current?.id !== documentId) return
+      updateRef.current(documentId, {
+        dependencyRevision: current.dependencyRevision + 1,
+      })
+    })
     void desktop.startLanguageServer({
       documentId,
       filePath: document.filePath,
+      previewFilePath: document.previewRootPath,
       source: document.source,
       version: document.sourceRevision,
+      openDocuments,
     }).catch((error) => {
       setStatus({
         documentId,
@@ -84,10 +106,11 @@ export function useTinymistLanguageServer(
     return () => {
       removeStatusListener()
       removeDiagnosticsListener()
+      removeDependencyListener()
       desktop.stopLanguageServer()
       updateRef.current(documentId, { languageServerDiagnostics: undefined })
     }
-  }, [document?.id, document?.filePath, retryGeneration])
+  }, [document?.id, document?.filePath, document?.previewRootPath, retryGeneration])
 
   useEffect(() => {
     if (!window.typstDesktop || !document) return
@@ -104,12 +127,11 @@ export function useTinymistLanguageServer(
       setRetryGeneration((current) => current + 1)
       return
     }
-    window.typstDesktop.updateLanguageServer({
+    void window.typstDesktop.syncLanguageServerDocuments({
       documentId: document.id,
-      source: document.source,
-      version: document.sourceRevision,
-    })
-  }, [document?.id, document?.filePath, document?.sourceRevision, status.documentId, status.state])
+      openDocuments,
+    }).catch((error) => reportError('tinymist-document-sync', error))
+  }, [document?.id, document?.filePath, openDocumentsKey, status.documentId, status.state])
 
   return status
 }

@@ -10,9 +10,12 @@ export interface WritableFileHandle {
 }
 
 export interface DesktopDocument {
-  filePath: string
+  recoveryId?: string
+  filePath?: string
   name: string
   content: string
+  diskVersion?: string
+  isDirty?: boolean
   commit?: string
   repoName?: string
 }
@@ -20,8 +23,29 @@ export interface DesktopDocument {
 export interface DesktopFileMetadata {
   filePath: string
   name: string
+  diskVersion: string
   commit?: string
   repoName?: string
+}
+
+export interface DesktopFileChange {
+  filePath: string
+  kind: 'changed' | 'deleted'
+  content?: string
+  diskVersion?: string
+}
+
+export interface LanguageServerDocument {
+  documentId: string
+  filePath?: string
+  source: string
+  version: number
+}
+
+export interface PreviewRoot {
+  filePath: string
+  name: string
+  relativePath: string
 }
 
 export interface AppSettings {
@@ -43,9 +67,42 @@ export interface DesktopApi {
     filePath?: string
     name: string
     content: string
-  }): Promise<DesktopFileMetadata | null>
-  startSourceSync(request: { documentId: string; filePath: string; source: string }): Promise<void>
-  updateSourceSync(request: { documentId: string; source: string }): void
+    expectedDiskVersion?: string | null
+  }): Promise<DesktopFileMetadata | DesktopFileChange | null>
+  watchDocuments(filePaths: string[]): Promise<void>
+  onDocumentChange(listener: (change: DesktopFileChange) => void): () => void
+  resolveDocumentConflict(request: {
+    name: string
+    deleted: boolean
+  }): Promise<'reload' | 'keep'>
+  saveRecovery(session: {
+    documents: Array<{ recoveryId: string; filePath?: string; name: string; content: string }>
+    activeFilePath?: string
+  }): Promise<void>
+  clearRecovery(): Promise<void>
+  onAppCloseRequested(listener: () => void): () => void
+  acknowledgeAppClose(): void
+  resolveAppClose(request: { dirtyNames: string[] }): Promise<'save' | 'discard' | 'cancel'>
+  completeAppClose(close: boolean): void
+  discoverPreviewRoots(request: {
+    filePath: string
+    openDocuments: Array<{ filePath: string; source: string }>
+  }): Promise<PreviewRoot[]>
+  onPreviewRootsChanged(listener: (update: {
+    filePath: string
+    roots: PreviewRoot[]
+  }) => void): () => void
+  stopPreviewRootDiscovery(): void
+  startSourceSync(request: {
+    documentId: string
+    filePath: string
+    sourceFilePath: string
+    memoryFiles: Array<{ filePath: string; source: string }>
+  }): Promise<void>
+  updateSourceSync(request: {
+    documentId: string
+    memoryFiles: Array<{ filePath: string; source: string }>
+  }): void
   locateSource(request: { documentId: string; requestId: number; line: number; character: number }): void
   stopSourceSync(): void
   onSourceJump(listener: (jump: SourceJump) => void): () => void
@@ -59,16 +116,24 @@ export interface DesktopApi {
   startLanguageServer(request: {
     documentId: string
     filePath?: string
+    previewFilePath?: string
     source: string
     version: number
+    openDocuments: LanguageServerDocument[]
   }): Promise<void>
-  updateLanguageServer(request: { documentId: string; source: string; version: number }): void
+  syncLanguageServerDocuments(request: {
+    documentId: string
+    openDocuments: LanguageServerDocument[]
+  }): Promise<void>
   compileWithLanguageServer(request: {
     documentId: string
     source: string
     version: number
+    previewFilePath?: string
+    openDocuments: LanguageServerDocument[]
   }): Promise<
     | { version: number; durationMs: number; pdf: ArrayBuffer; error?: never }
+    | { cancelled: true; error?: never }
     | { error: string }
   >
   stopLanguageServer(): void
@@ -78,6 +143,7 @@ export interface DesktopApi {
     version: number
     diagnostics: LanguageServerDiagnostic[]
   }) => void): () => void
+  onLanguageServerDependencyChange(listener: (update: { documentId: string }) => void): () => void
 }
 
 export interface PreviewPosition {
@@ -137,7 +203,11 @@ export interface EditorDocument {
   source: string
   sourceRevision: number
   attemptedRevision?: number
+  dependencyRevision: number
+  attemptedDependencyRevision?: number
   isDirty: boolean
+  diskVersion?: string
+  previewRootPath?: string
   repoCommit?: string
   repoName?: string
   fallbackUuid: string

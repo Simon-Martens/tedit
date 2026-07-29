@@ -1,20 +1,38 @@
 const { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, net, protocol, session } = require('electron')
 const { execFile } = require('node:child_process')
+const { createHash } = require('node:crypto')
+const nativeFs = require('node:fs')
 const fs = require('node:fs/promises')
 const path = require('node:path')
 const { pathToFileURL } = require('node:url')
 const { promisify } = require('node:util')
+const { Worker } = require('node:worker_threads')
 const { TinymistService } = require('./tinymist-service.cjs')
 const { formatTinymistExportError, TinymistLspService } = require('./tinymist-lsp-service.cjs')
 
 app.setPath('userData', path.join(app.getPath('appData'), 'tedit'))
 
 const isDevelopment = Boolean(process.env.VITE_DEV_SERVER_URL)
+const appEntryUrl = isDevelopment
+  ? new URL(process.env.VITE_DEV_SERVER_URL).href
+  : pathToFileURL(path.join(__dirname, '..', 'dist', 'index.html')).href
 const appIconPath = isDevelopment
   ? path.join(__dirname, '..', 'build', 'icon.png')
   : path.join(process.resourcesPath, 'icon.png')
 const execFileAsync = promisify(execFile)
 const allowedDocumentPaths = new Set()
+const previewRootsBySource = new Map()
+const workspaceRootsByDocument = new Map()
+const previewDiscoveryWorkers = new Map()
+const windowCloseStates = new Map()
+const diskVersions = new Map()
+const documentWatchers = new Map()
+const watchedDocumentPaths = new Set()
+const documentWatchTimers = new Map()
+const documentInspectionGenerations = new Map()
+const documentSaveQueues = new Map()
+const unavailableSessionPaths = new Set()
+const trustedWebContentsIds = new Set()
 const defaultSettings = {
   vimEnabled: false,
   showPreviewPosition: false,
@@ -24,14 +42,212 @@ const defaultSettings = {
 }
 const settingsPath = path.join(app.getPath('userData'), 'settings.json')
 const sessionPath = path.join(app.getPath('cache'), 'tedit', 'session.json')
+const recoveryPath = path.join(app.getPath('userData'), 'recovery.json')
 let settingsWrite = Promise.resolve()
 let sessionWrite = Promise.resolve()
+let recoveryWrite = Promise.resolve()
+let tinymistLspStartGeneration = 0
 const tinymist = new TinymistService((channel, payload) => {
   for (const window of BrowserWindow.getAllWindows()) window.webContents.send(channel, payload)
 })
 const tinymistLsp = new TinymistLspService((channel, payload) => {
   for (const window of BrowserWindow.getAllWindows()) window.webContents.send(channel, payload)
 })
+
+function formatFailure(error) {
+  if (error instanceof Error) return error.stack || error.message
+  return String(error)
+}
+
+function logFailure(scope, error, details) {
+  const suffix = details ? ` ${JSON.stringify(details)}` : ''
+  console.error(`[tedit:${scope}]${suffix}\n${formatFailure(error)}`)
+}
+
+process.on('uncaughtExceptionMonitor', (error, origin) => logFailure('uncaught-exception', error, { origin }))
+process.on('unhandledRejection', (error) => logFailure('unhandled-rejection', error))
+
+function assertTrustedIpc(event, channel) {
+  const frame = event.senderFrame
+  if (
+    !trustedWebContentsIds.has(event.sender.id)
+    || !frame
+    || frame !== event.sender.mainFrame
+    || frame.url !== appEntryUrl
+  ) {
+    throw new Error(`Rejected IPC ${channel} from ${frame?.url ?? 'an unavailable frame'}.`)
+  }
+}
+
+function handleIpc(channel, listener) {
+  ipcMain.handle(channel, async (event, ...args) => {
+    try {
+      assertTrustedIpc(event, channel)
+      return await listener(event, ...args)
+    } catch (error) {
+      logFailure(`ipc:${channel}`, error)
+      throw error
+    }
+  })
+}
+
+function onIpc(channel, listener, fallback) {
+  ipcMain.on(channel, (event, ...args) => {
+    try {
+      assertTrustedIpc(event, channel)
+      const result = listener(event, ...args)
+      if (result && typeof result.then === 'function') {
+        result.catch((error) => logFailure(`ipc:${channel}`, error))
+      }
+    } catch (error) {
+      logFailure(`ipc:${channel}`, error)
+      if (fallback !== undefined) event.returnValue = fallback
+    }
+  })
+}
+
+function normalizeDocumentPath(filePath) {
+  return path.normalize(path.resolve(filePath))
+}
+
+function normalizeLanguageServerDocuments(documents) {
+  return (Array.isArray(documents) ? documents : []).flatMap((document) => {
+    if (
+      typeof document?.documentId !== 'string'
+      || !document.filePath
+      || typeof document.source !== 'string'
+      || !Number.isSafeInteger(document.version)
+    ) return []
+    const filePath = normalizeDocumentPath(document.filePath)
+    if (!allowedDocumentPaths.has(filePath)) return []
+    return [{
+      documentId: document.documentId,
+      filePath,
+      source: document.source,
+      version: document.version,
+    }]
+  })
+}
+
+function contentVersion(content) {
+  return createHash('sha256').update(content).digest('hex')
+}
+
+function rememberDocument(filePath, content) {
+  const normalizedPath = normalizeDocumentPath(filePath)
+  const diskVersion = contentVersion(content)
+  allowedDocumentPaths.add(normalizedPath)
+  unavailableSessionPaths.delete(normalizedPath)
+  if (!workspaceRootsByDocument.has(normalizedPath)) {
+    workspaceRootsByDocument.set(normalizedPath, path.dirname(normalizedPath))
+  }
+  diskVersions.set(normalizedPath, diskVersion)
+  return { filePath: normalizedPath, diskVersion }
+}
+
+function sendToWindows(channel, payload) {
+  for (const window of BrowserWindow.getAllWindows()) window.webContents.send(channel, payload)
+}
+
+async function inspectWatchedDocument(filePath, generation, retries = 3) {
+  try {
+    const content = await fs.readFile(filePath, 'utf8')
+    if (documentInspectionGenerations.get(filePath) !== generation) return
+    const diskVersion = contentVersion(content)
+    if (diskVersions.get(filePath) === diskVersion) return
+    diskVersions.set(filePath, diskVersion)
+    sendToWindows('document:change', { filePath, kind: 'changed', content, diskVersion })
+  } catch (error) {
+    if (error?.code !== 'ENOENT') {
+      logFailure('document-watch-read', error, { filePath })
+      return
+    }
+    if (documentInspectionGenerations.get(filePath) !== generation) return
+    if (retries > 0) {
+      setTimeout(() => void inspectWatchedDocument(filePath, generation, retries - 1), 75)
+      return
+    }
+    if (!diskVersions.has(filePath)) return
+    diskVersions.delete(filePath)
+    sendToWindows('document:change', { filePath, kind: 'deleted' })
+  }
+}
+
+function scheduleDocumentInspection(filePath) {
+  const generation = (documentInspectionGenerations.get(filePath) ?? 0) + 1
+  documentInspectionGenerations.set(filePath, generation)
+  clearTimeout(documentWatchTimers.get(filePath))
+  documentWatchTimers.set(filePath, setTimeout(() => {
+    documentWatchTimers.delete(filePath)
+    void inspectWatchedDocument(filePath, generation)
+  }, 100))
+}
+
+async function watchDocuments(filePaths) {
+  const requestedPaths = new Set((Array.isArray(filePaths) ? filePaths : [])
+    .filter((filePath) => typeof filePath === 'string')
+    .map(normalizeDocumentPath)
+    .filter((filePath) => allowedDocumentPaths.has(filePath)))
+
+  for (const watcher of documentWatchers.values()) watcher.close()
+  documentWatchers.clear()
+  for (const [filePath, timer] of documentWatchTimers) {
+    if (requestedPaths.has(filePath)) continue
+    clearTimeout(timer)
+    documentWatchTimers.delete(filePath)
+    documentInspectionGenerations.delete(filePath)
+  }
+  watchedDocumentPaths.clear()
+  for (const filePath of requestedPaths) {
+    watchedDocumentPaths.add(filePath)
+    if (!diskVersions.has(filePath)) {
+      try {
+        diskVersions.set(filePath, contentVersion(await fs.readFile(filePath, 'utf8')))
+      } catch (error) {
+        logFailure('document-watch-baseline', error, { filePath })
+        continue
+      }
+    }
+  }
+
+  const directories = new Map()
+  for (const filePath of watchedDocumentPaths) {
+    const directory = path.dirname(filePath)
+    const paths = directories.get(directory) ?? new Set()
+    paths.add(filePath)
+    directories.set(directory, paths)
+  }
+  for (const [directory, paths] of directories) {
+    try {
+      const watcher = nativeFs.watch(directory, (_eventType, filename) => {
+        if (!filename) {
+          for (const filePath of paths) scheduleDocumentInspection(filePath)
+          return
+        }
+        const changedPath = normalizeDocumentPath(path.join(directory, filename.toString()))
+        if (paths.has(changedPath)) scheduleDocumentInspection(changedPath)
+      })
+      watcher.on('error', (error) => {
+        logFailure('document-watcher', error, { directory })
+        watcher.close()
+        if (documentWatchers.get(directory) === watcher) documentWatchers.delete(directory)
+      })
+      documentWatchers.set(directory, watcher)
+    } catch (error) {
+      logFailure('document-watcher-create', error, { directory })
+    }
+  }
+}
+
+function queueDocumentSave(filePath, save) {
+  const previous = documentSaveQueues.get(filePath) ?? Promise.resolve()
+  const queued = previous.catch(() => undefined).then(save)
+  const tracked = queued.finally(() => {
+    if (documentSaveQueues.get(filePath) === tracked) documentSaveQueues.delete(filePath)
+  })
+  documentSaveQueues.set(filePath, tracked)
+  return tracked
+}
 
 protocol.registerSchemesAsPrivileged([{
   scheme: 'tedit-docs',
@@ -44,10 +260,15 @@ function configureDocumentationProtocol() {
     : path.join(process.resourcesPath, 'typst-docs', 'site'))
   protocol.handle('tedit-docs', async (request) => {
     const url = new URL(request.url)
+    if (url.protocol !== 'tedit-docs:' || url.hostname !== 'docs') {
+      logFailure('docs-protocol', new Error(`Rejected documentation URL ${request.url}.`))
+      return new Response('Forbidden', { status: 403 })
+    }
     let relativePath
     try {
       relativePath = decodeURIComponent(url.pathname).replace(/^\/+/, '')
-    } catch {
+    } catch (error) {
+      logFailure('docs-decode', error, { url: request.url })
       return new Response('Bad request', { status: 400 })
     }
     let filePath = path.resolve(docsRoot, relativePath || 'index.html')
@@ -57,10 +278,26 @@ function configureDocumentationProtocol() {
     try {
       const stats = await fs.stat(filePath)
       if (stats.isDirectory()) filePath = path.join(filePath, 'index.html')
-    } catch {
+    } catch (error) {
       if (!path.extname(filePath)) filePath = path.join(filePath, 'index.html')
+      else logFailure('docs-stat', error, { filePath })
     }
-    return net.fetch(pathToFileURL(filePath).href)
+    try {
+      const response = await net.fetch(pathToFileURL(filePath).href)
+      const headers = new Headers(response.headers)
+      headers.set(
+        'Content-Security-Policy',
+        "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'",
+      )
+      return new Response(response.body, {
+        status: response.status,
+        statusText: response.statusText,
+        headers,
+      })
+    } catch (error) {
+      logFailure('docs-protocol', error, { filePath })
+      return new Response('Documentation unavailable', { status: 500 })
+    }
   })
 }
 
@@ -78,13 +315,17 @@ async function readSettings() {
     const settings = JSON.parse(await fs.readFile(settingsPath, 'utf8'))
     return { ...defaultSettings, ...normalizeSettings(settings) }
   } catch (error) {
-    if (error?.code === 'ENOENT' || error instanceof SyntaxError) return { ...defaultSettings }
+    if (error?.code === 'ENOENT') return { ...defaultSettings }
+    if (error instanceof SyntaxError) {
+      logFailure('settings-parse', error, { settingsPath })
+      return { ...defaultSettings }
+    }
     throw error
   }
 }
 
-ipcMain.handle('settings:get', readSettings)
-ipcMain.handle('settings:update', (_event, update) => {
+handleIpc('settings:get', readSettings)
+handleIpc('settings:update', (_event, update) => {
   settingsWrite = settingsWrite.catch(() => undefined).then(async () => {
     const settings = { ...await readSettings(), ...normalizeSettings(update) }
     await fs.mkdir(path.dirname(settingsPath), { recursive: true })
@@ -96,12 +337,56 @@ ipcMain.handle('settings:update', (_event, update) => {
   return settingsWrite
 })
 
-ipcMain.on('clipboard:read', (event) => {
+onIpc('clipboard:read', (event) => {
   event.returnValue = clipboard.readText()
-})
-ipcMain.on('clipboard:write', (event, text) => {
+}, '')
+onIpc('clipboard:write', (event, text) => {
   clipboard.writeText(typeof text === 'string' ? text : '')
   event.returnValue = undefined
+}, null)
+
+handleIpc('app:resolve-close', async (event, request) => {
+  const owner = BrowserWindow.fromWebContents(event.sender)
+  const dirtyNames = (Array.isArray(request?.dirtyNames) ? request.dirtyNames : [])
+    .filter((name) => typeof name === 'string')
+    .slice(0, 20)
+  const options = {
+    type: 'warning',
+    title: 'Unsaved documents',
+    message: dirtyNames.length === 1
+      ? `${dirtyNames[0]} has unsaved changes.`
+      : `${dirtyNames.length} documents have unsaved changes.`,
+    detail: dirtyNames.length > 1 ? dirtyNames.join('\n') : 'Choose what to do before closing tedit.',
+    buttons: ['Save All', 'Discard Changes', 'Cancel'],
+    defaultId: 0,
+    cancelId: 2,
+    noLink: true,
+  }
+  const result = owner
+    ? await dialog.showMessageBox(owner, options)
+    : await dialog.showMessageBox(options)
+  return ['save', 'discard', 'cancel'][result.response] ?? 'cancel'
+})
+
+onIpc('app:acknowledge-close', (event) => {
+  const owner = BrowserWindow.fromWebContents(event.sender)
+  const state = owner ? windowCloseStates.get(owner.id) : undefined
+  if (!state?.pending) return
+  clearTimeout(state.timeout)
+  state.timeout = undefined
+})
+
+onIpc('app:complete-close', (event, close) => {
+  const owner = BrowserWindow.fromWebContents(event.sender)
+  if (!owner) return
+  const state = windowCloseStates.get(owner.id)
+  if (!state) return
+  clearTimeout(state.timeout)
+  state.timeout = undefined
+  state.pending = false
+  if (!close) return
+  state.approved = true
+  owner.close()
 })
 
 async function getGitMetadata(filePath) {
@@ -112,18 +397,18 @@ async function getGitMetadata(filePath) {
       { timeout: 3000 },
     )
     const [root, commit] = stdout.trim().split(/\r?\n/)
-    return { repoName: path.basename(root), commit: commit || undefined }
+    return { repoName: path.basename(root), commit: commit || undefined, workspaceRoot: root }
   } catch {
-    return {}
+    return { workspaceRoot: path.dirname(filePath) }
   }
 }
 
 function normalizeSession(value) {
   const filePaths = [...new Set((Array.isArray(value?.filePaths) ? value.filePaths : [])
     .filter((filePath) => typeof filePath === 'string')
-    .map((filePath) => path.resolve(filePath)))]
+    .map(normalizeDocumentPath))]
   const activeFilePath = typeof value?.activeFilePath === 'string'
-    ? path.resolve(value.activeFilePath)
+    ? normalizeDocumentPath(value.activeFilePath)
     : undefined
   return {
     filePaths,
@@ -140,37 +425,116 @@ async function readSession() {
   }
 }
 
-ipcMain.handle('session:restore', async () => {
-  const stored = await readSession()
+function normalizeRecovery(value) {
+  const documents = (Array.isArray(value?.documents) ? value.documents : []).flatMap((document) => {
+    if (
+      typeof document?.name !== 'string'
+      || typeof document.content !== 'string'
+    ) return []
+    return [{
+      recoveryId: typeof document.recoveryId === 'string' ? document.recoveryId : undefined,
+      filePath: typeof document.filePath === 'string'
+        ? normalizeDocumentPath(document.filePath)
+        : undefined,
+      name: document.name,
+      content: document.content,
+    }]
+  })
+  const activeFilePath = typeof value?.activeFilePath === 'string'
+    ? normalizeDocumentPath(value.activeFilePath)
+    : undefined
+  return { documents, activeFilePath }
+}
+
+async function readRecovery() {
+  try {
+    return normalizeRecovery(JSON.parse(await fs.readFile(recoveryPath, 'utf8')))
+  } catch (error) {
+    if (error?.code === 'ENOENT') return normalizeRecovery({})
+    if (error instanceof SyntaxError) {
+      logFailure('recovery-parse', error, { recoveryPath })
+      return normalizeRecovery({})
+    }
+    throw error
+  }
+}
+
+handleIpc('recovery:save', (_event, update) => {
+  recoveryWrite = recoveryWrite.catch(() => undefined).then(async () => {
+    const recovery = normalizeRecovery(update)
+    await fs.mkdir(path.dirname(recoveryPath), { recursive: true })
+    const temporaryPath = `${recoveryPath}.tmp`
+    await fs.writeFile(temporaryPath, `${JSON.stringify(recovery, null, 2)}\n`, 'utf8')
+    await fs.rename(temporaryPath, recoveryPath)
+  })
+  return recoveryWrite
+})
+
+handleIpc('recovery:clear', () => {
+  recoveryWrite = recoveryWrite.catch(() => undefined).then(() => fs.rm(recoveryPath, { force: true }))
+  return recoveryWrite
+})
+
+handleIpc('session:restore', async () => {
+  const [stored, recovery] = await Promise.all([readSession(), readRecovery()])
   const restored = await Promise.all(stored.filePaths.map(async (filePath) => {
     try {
       const content = await fs.readFile(filePath, 'utf8')
       const gitMetadata = await getGitMetadata(filePath)
-      allowedDocumentPaths.add(filePath)
+      const remembered = rememberDocument(filePath, content)
+      workspaceRootsByDocument.set(remembered.filePath, gitMetadata.workspaceRoot)
       return {
-        filePath,
-        name: path.basename(filePath),
+        ...remembered,
+        name: path.basename(remembered.filePath),
         content,
         ...gitMetadata,
       }
-    } catch {
+    } catch (error) {
+      if (error?.code !== 'ENOENT') {
+        unavailableSessionPaths.add(filePath)
+        logFailure('session-restore-document', error, { filePath })
+      }
       return undefined
     }
   }))
   const documents = restored.filter(Boolean)
+  for (const recovered of recovery.documents) {
+    if (!recovered.filePath) {
+      documents.push({ ...recovered, isDirty: true })
+      continue
+    }
+    const existingIndex = documents.findIndex(({ filePath }) => filePath === recovered.filePath)
+    if (existingIndex >= 0) {
+      if (documents[existingIndex].content === recovered.content) continue
+      documents[existingIndex] = {
+        ...documents[existingIndex],
+        name: recovered.name,
+        content: recovered.content,
+        isDirty: true,
+      }
+      continue
+    }
+    allowedDocumentPaths.add(recovered.filePath)
+    workspaceRootsByDocument.set(recovered.filePath, path.dirname(recovered.filePath))
+    documents.push({ ...recovered, isDirty: true })
+  }
+  const preferredActivePath = recovery.activeFilePath ?? stored.activeFilePath
   return {
     documents,
-    activeFilePath: documents.some(({ filePath }) => filePath === stored.activeFilePath)
-      ? stored.activeFilePath
+    activeFilePath: documents.some(({ filePath }) => filePath === preferredActivePath)
+      ? preferredActivePath
       : documents[0]?.filePath,
   }
 })
 
-ipcMain.handle('session:save', (_event, update) => {
+handleIpc('session:save', (_event, update) => {
   sessionWrite = sessionWrite.catch(() => undefined).then(async () => {
     const requested = normalizeSession(update)
     const stored = normalizeSession({
-      filePaths: requested.filePaths.filter((filePath) => allowedDocumentPaths.has(filePath)),
+      filePaths: [
+        ...requested.filePaths.filter((filePath) => allowedDocumentPaths.has(filePath)),
+        ...unavailableSessionPaths,
+      ],
       activeFilePath: requested.activeFilePath,
     })
     await fs.mkdir(path.dirname(sessionPath), { recursive: true })
@@ -198,9 +562,82 @@ function createWindow() {
       sandbox: true,
     },
   })
+  trustedWebContentsIds.add(window.webContents.id)
+  const closeState = { approved: false, pending: false, timeout: undefined }
+  windowCloseStates.set(window.id, closeState)
+
+  window.on('close', (event) => {
+    if (closeState.approved) return
+    event.preventDefault()
+    if (closeState.pending) return
+    closeState.pending = true
+    window.webContents.send('app:request-close')
+    closeState.timeout = setTimeout(async () => {
+      if (window.isDestroyed() || !closeState.pending) return
+      try {
+        const result = await dialog.showMessageBox(window, {
+          type: 'warning',
+          title: 'tedit is not responding',
+          message: 'The editor did not respond to the close request.',
+          buttons: ['Cancel', 'Close Anyway'],
+          defaultId: 0,
+          cancelId: 0,
+          noLink: true,
+        })
+        closeState.pending = false
+        if (result.response === 1) {
+          closeState.approved = true
+          window.close()
+        }
+      } catch (error) {
+        closeState.pending = false
+        logFailure('close-timeout-dialog', error)
+      }
+    }, 8000)
+  })
+  window.once('closed', () => {
+    clearTimeout(closeState.timeout)
+    windowCloseStates.delete(window.id)
+    trustedWebContentsIds.delete(window.webContents.id)
+  })
 
   window.once('ready-to-show', () => window.show())
-  window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+  const isDocumentationUrl = (value) => {
+    try {
+      const url = new URL(value)
+      return url.protocol === 'tedit-docs:' && url.hostname === 'docs'
+    } catch {
+      return false
+    }
+  }
+  const blockUnexpectedNavigation = (details) => {
+    const allowed = details.isMainFrame
+      ? details.url === appEntryUrl
+      : isDocumentationUrl(details.url) || details.url === 'about:srcdoc'
+    if (allowed) return
+    details.preventDefault()
+    logFailure('navigation', new Error(`Blocked navigation to ${details.url}.`))
+  }
+  window.webContents.on('will-frame-navigate', blockUnexpectedNavigation)
+  window.webContents.on('will-redirect', blockUnexpectedNavigation)
+  window.webContents.setWindowOpenHandler(({ url }) => {
+    logFailure('window-open', new Error(`Blocked new window for ${url}.`))
+    return { action: 'deny' }
+  })
+  window.webContents.on('console-message', (details) => {
+    if (details.level !== 'warning' && details.level !== 'error') return
+    const logger = details.level === 'error' ? console.error : console.warn
+    logger(`[tedit:renderer] ${details.message} (${details.sourceId || 'unknown'}:${details.lineNumber || 0})`)
+  })
+  window.webContents.on('preload-error', (_event, preloadPath, error) => {
+    logFailure('preload', error, { preloadPath })
+  })
+  window.webContents.on('did-fail-load', (_event, code, description, url, isMainFrame) => {
+    if (code !== -3) logFailure('load', new Error(description), { code, url, isMainFrame })
+  })
+  window.webContents.on('render-process-gone', (_event, details) => {
+    logFailure('renderer-gone', new Error(details.reason), details)
+  })
   window.webContents.on('before-input-event', (event, input) => {
     if (input.type !== 'keyDown' || (!input.control && !input.meta)) return
     const command = input.key.toLowerCase()
@@ -211,19 +648,19 @@ function createWindow() {
     event.preventDefault()
   })
 
-  if (isDevelopment) {
-    window.loadURL(process.env.VITE_DEV_SERVER_URL)
-  } else {
-    window.loadFile(path.join(__dirname, '..', 'dist', 'index.html'))
-  }
+  const load = isDevelopment
+    ? window.loadURL(appEntryUrl)
+    : window.loadFile(path.join(__dirname, '..', 'dist', 'index.html'))
+  void load.catch((error) => logFailure('window-load', error, { url: appEntryUrl }))
 }
 
-function isAppOrigin(origin) {
+function isAppOrigin(webContents, origin) {
+  if (!webContents || !trustedWebContentsIds.has(webContents.id)) return false
   try {
     const url = new URL(origin)
-    return url.protocol === 'file:' || (
-      url.protocol === 'http:' && (url.hostname === 'localhost' || url.hostname === '127.0.0.1')
-    )
+    return isDevelopment
+      ? url.origin === new URL(appEntryUrl).origin
+      : url.protocol === 'file:'
   } catch {
     return false
   }
@@ -231,23 +668,32 @@ function isAppOrigin(origin) {
 
 function configurePermissions() {
   const appSession = session.defaultSession
-  appSession.setPermissionCheckHandler((_webContents, permission, requestingOrigin) => {
+  appSession.webRequest.onErrorOccurred((details) => {
+    if (trustedWebContentsIds.has(details.webContentsId)) {
+      logFailure('network', new Error(details.error), {
+        method: details.method,
+        resourceType: details.resourceType,
+        url: details.url,
+      })
+    }
+  })
+  appSession.setPermissionCheckHandler((webContents, permission, requestingOrigin) => {
     if (permission === 'local-fonts' || permission === 'localFonts') {
-      return isAppOrigin(requestingOrigin)
+      return isAppOrigin(webContents, requestingOrigin)
     }
     return false
   })
   appSession.setPermissionRequestHandler((webContents, permission, callback, details) => {
     if (permission === 'local-fonts' || permission === 'localFonts') {
       const origin = details.requestingUrl || webContents.getURL()
-      callback(isAppOrigin(origin))
+      callback(isAppOrigin(webContents, origin))
       return
     }
     callback(false)
   })
 }
 
-ipcMain.handle('document:open', async () => {
+handleIpc('document:open', async () => {
   const result = await dialog.showOpenDialog({
     title: 'Open Typst document',
     properties: ['openFile'],
@@ -256,22 +702,24 @@ ipcMain.handle('document:open', async () => {
 
   if (result.canceled || !result.filePaths[0]) return null
 
-  const filePath = result.filePaths[0]
+  const filePath = normalizeDocumentPath(result.filePaths[0])
   const [content, gitMetadata] = await Promise.all([
     fs.readFile(filePath, 'utf8'),
     getGitMetadata(filePath),
   ])
-  allowedDocumentPaths.add(path.resolve(filePath))
+  const remembered = rememberDocument(filePath, content)
+  workspaceRootsByDocument.set(remembered.filePath, gitMetadata.workspaceRoot)
   return {
-    filePath,
+    ...remembered,
     name: path.basename(filePath),
     content,
     ...gitMetadata,
   }
 })
 
-ipcMain.handle('document:save', async (_event, request) => {
-  let filePath = request.filePath ? path.resolve(request.filePath) : undefined
+handleIpc('document:save', async (_event, request) => {
+  let filePath = request.filePath ? normalizeDocumentPath(request.filePath) : undefined
+  const shouldValidateDiskVersion = Boolean(filePath)
 
   if (filePath && !allowedDocumentPaths.has(filePath)) {
     throw new Error('Refusing to write a file that was not opened by tedit.')
@@ -284,52 +732,230 @@ ipcMain.handle('document:save', async (_event, request) => {
       filters: [{ name: 'Typst documents', extensions: ['typ'] }],
     })
     if (result.canceled || !result.filePath) return null
-    filePath = result.filePath.toLowerCase().endsWith('.typ')
+    filePath = normalizeDocumentPath(result.filePath.toLowerCase().endsWith('.typ')
       ? result.filePath
-      : `${result.filePath}.typ`
+      : `${result.filePath}.typ`)
   }
 
-  await fs.writeFile(filePath, request.content, 'utf8')
-  const gitMetadata = await getGitMetadata(filePath)
-  allowedDocumentPaths.add(path.resolve(filePath))
-  return {
-    filePath,
-    name: path.basename(filePath),
-    ...gitMetadata,
-  }
+  return queueDocumentSave(filePath, async () => {
+    if (shouldValidateDiskVersion && 'expectedDiskVersion' in request) {
+      try {
+        const content = await fs.readFile(filePath, 'utf8')
+        const diskVersion = contentVersion(content)
+        if (request.expectedDiskVersion === null || diskVersion !== request.expectedDiskVersion) {
+          diskVersions.set(filePath, diskVersion)
+          return { filePath, kind: 'changed', content, diskVersion }
+        }
+      } catch (error) {
+        if (error?.code !== 'ENOENT') throw error
+        if (request.expectedDiskVersion !== null) return { filePath, kind: 'deleted' }
+      }
+    }
+
+    const temporaryPath = `${filePath}.tedit-${process.pid}-${Date.now()}.tmp`
+    try {
+      await fs.writeFile(temporaryPath, request.content, 'utf8')
+      await fs.rename(temporaryPath, filePath)
+    } finally {
+      await fs.rm(temporaryPath, { force: true }).catch((error) => {
+        logFailure('document-save-cleanup', error, { temporaryPath })
+      })
+    }
+    const remembered = rememberDocument(filePath, request.content)
+    const gitMetadata = await getGitMetadata(filePath)
+    workspaceRootsByDocument.set(remembered.filePath, gitMetadata.workspaceRoot)
+    return {
+      ...remembered,
+      name: path.basename(filePath),
+      ...gitMetadata,
+    }
+  })
 })
 
-ipcMain.handle('tinymist:start', async (_event, request) => {
-  const filePath = path.resolve(request.filePath)
+handleIpc('document:watch', (_event, filePaths) => watchDocuments(filePaths))
+handleIpc('document:resolve-conflict', async (event, request) => {
+  const owner = BrowserWindow.fromWebContents(event.sender)
+  const deleted = Boolean(request?.deleted)
+  const options = {
+    type: 'warning',
+    title: deleted ? 'File deleted outside tedit' : 'File changed outside tedit',
+    message: deleted
+      ? `${request.name} was deleted outside tedit.`
+      : `${request.name} changed on disk while you have unsaved edits.`,
+    detail: deleted
+      ? 'Keep the editor version to recreate it on the next save.'
+      : 'Reloading discards your unsaved edits. Keeping them allows the next save to replace the disk version.',
+    buttons: deleted ? ['Keep Editor Version'] : ['Reload from Disk', 'Keep My Changes'],
+    defaultId: 0,
+    cancelId: deleted ? 0 : 1,
+    noLink: true,
+  }
+  const result = owner
+    ? await dialog.showMessageBox(owner, options)
+    : await dialog.showMessageBox(options)
+  return !deleted && result.response === 0 ? 'reload' : 'keep'
+})
+
+handleIpc('document:discover-preview-roots', async (event, request) => {
+  const filePath = normalizeDocumentPath(request.filePath)
   if (!allowedDocumentPaths.has(filePath)) {
-    throw new Error('Tinymist can only inspect a document opened by tedit.')
+    throw new Error('Preview roots can only be discovered for a document opened by tedit.')
   }
-  void tinymist.start({ ...request, filePath })
+  const openDocuments = (Array.isArray(request.openDocuments) ? request.openDocuments : [])
+    .flatMap((document) => {
+      if (!document?.filePath || typeof document.source !== 'string') return []
+      const documentPath = normalizeDocumentPath(document.filePath)
+      if (!allowedDocumentPaths.has(documentPath)) return []
+      return [{ filePath: documentPath, source: document.source }]
+    })
+  previewDiscoveryWorkers.get(event.sender.id)?.terminate()
+  const worker = new Worker(path.join(__dirname, 'preview-root-discovery-worker.cjs'), {
+    workerData: {
+      filePath,
+      rootDirectory: workspaceRootsByDocument.get(filePath) ?? path.dirname(filePath),
+      openDocuments,
+    },
+  })
+  previewDiscoveryWorkers.set(event.sender.id, worker)
+
+  const roots = await new Promise((resolve, reject) => {
+    let settled = false
+    worker.on('message', (result) => {
+      if (previewDiscoveryWorkers.get(event.sender.id) !== worker) return
+      previewRootsBySource.set(filePath, new Set(
+        result.map((root) => normalizeDocumentPath(root.filePath)),
+      ))
+      if (!settled) {
+        settled = true
+        resolve(result)
+      } else if (!event.sender.isDestroyed()) {
+        event.sender.send('document:preview-roots', { filePath, roots: result })
+      }
+    })
+    worker.once('error', (error) => {
+      if (!settled) {
+        settled = true
+        reject(error)
+      }
+    })
+    worker.once('exit', (code) => {
+      if (previewDiscoveryWorkers.get(event.sender.id) === worker) {
+        previewDiscoveryWorkers.delete(event.sender.id)
+      }
+      if (!settled) {
+        settled = true
+        reject(new Error(code === 0
+          ? 'Preview-root discovery stopped before producing a result.'
+          : 'Preview-root discovery was cancelled.'))
+      }
+    })
+  })
+  return roots
+})
+onIpc('document:stop-preview-root-discovery', (event) => {
+  const worker = previewDiscoveryWorkers.get(event.sender.id)
+  if (worker) void worker.terminate()
+  previewDiscoveryWorkers.delete(event.sender.id)
 })
 
-ipcMain.on('tinymist:update', (_event, request) => tinymist.update(request))
-ipcMain.on('tinymist:locate', (_event, request) => tinymist.locate(request))
-ipcMain.on('tinymist:stop', () => void tinymist.stop())
+function isAllowedPreviewRoot(sourceFilePath, previewFilePath) {
+  return sourceFilePath === previewFilePath
+    || previewRootsBySource.get(sourceFilePath)?.has(previewFilePath)
+}
 
-ipcMain.handle('tinymist-lsp:start', async (_event, request) => {
-  const filePath = request.filePath
-    ? path.resolve(request.filePath)
+handleIpc('tinymist:start', async (_event, request) => {
+  const filePath = normalizeDocumentPath(request.filePath)
+  const sourceFilePath = normalizeDocumentPath(request.sourceFilePath)
+  if (!isAllowedPreviewRoot(sourceFilePath, filePath) || !allowedDocumentPaths.has(sourceFilePath)) {
+    throw new Error('Tinymist can only inspect a discovered preview root and open source file.')
+  }
+  const memoryFiles = (Array.isArray(request.memoryFiles) ? request.memoryFiles : [])
+    .flatMap((document) => {
+      if (!document?.filePath || typeof document.source !== 'string') return []
+      const documentPath = normalizeDocumentPath(document.filePath)
+      if (!allowedDocumentPaths.has(documentPath)) return []
+      return [{ filePath: documentPath, source: document.source }]
+    })
+  void tinymist.start({ ...request, filePath, sourceFilePath, memoryFiles })
+})
+
+onIpc('tinymist:update', (_event, request) => {
+  const memoryFiles = (Array.isArray(request.memoryFiles) ? request.memoryFiles : [])
+    .flatMap((document) => {
+      if (!document?.filePath || typeof document.source !== 'string') return []
+      const documentPath = normalizeDocumentPath(document.filePath)
+      if (!allowedDocumentPaths.has(documentPath)) return []
+      return [{ filePath: documentPath, source: document.source }]
+    })
+  tinymist.update({ ...request, memoryFiles })
+})
+onIpc('tinymist:locate', (_event, request) => tinymist.locate(request))
+onIpc('tinymist:stop', () => tinymist.stop())
+
+handleIpc('tinymist-lsp:start', async (_event, request) => {
+  const startGeneration = ++tinymistLspStartGeneration
+  if (
+    typeof request?.documentId !== 'string'
+    || !/^[A-Za-z0-9-]{1,64}$/.test(request.documentId)
+    || typeof request.source !== 'string'
+    || !Number.isSafeInteger(request.version)
+  ) throw new Error('Invalid Tinymist language-server start request.')
+  const activeFilePath = request.filePath
+    ? normalizeDocumentPath(request.filePath)
     : path.join(app.getPath('cache'), 'tedit', 'untitled', `${request.documentId}.typ`)
-  if (request.filePath && !allowedDocumentPaths.has(filePath)) {
+  const filePath = request.previewFilePath
+    ? normalizeDocumentPath(request.previewFilePath)
+    : activeFilePath
+  if (request.filePath && !allowedDocumentPaths.has(activeFilePath)) {
     throw new Error('Tinymist can only inspect a document opened by tedit.')
   }
-  if (!request.filePath) await fs.mkdir(path.dirname(filePath), { recursive: true })
-  await tinymistLsp.start({ ...request, filePath })
+  if (request.previewFilePath && !isAllowedPreviewRoot(activeFilePath, filePath)) {
+    throw new Error('Tinymist can only compile a discovered preview root.')
+  }
+  if (!request.filePath) await fs.mkdir(path.dirname(activeFilePath), { recursive: true })
+  const openDocuments = normalizeLanguageServerDocuments(request.openDocuments)
+  const openRoot = openDocuments.find((document) => document.filePath === filePath)
+  const source = openRoot?.source ?? (filePath === activeFilePath
+    ? request.source
+    : await fs.readFile(filePath, 'utf8'))
+  const version = openRoot?.version ?? (filePath === activeFilePath ? request.version : 0)
+  if (startGeneration !== tinymistLspStartGeneration) return
+  await tinymistLsp.start({
+    ...request,
+    activeFilePath,
+    filePath,
+    source,
+    version,
+    activeVersion: request.version,
+    rootDiskBacked: !openRoot && filePath !== activeFilePath,
+    openDocuments,
+  })
 })
-ipcMain.on('tinymist-lsp:update', (_event, request) => tinymistLsp.update(request))
-ipcMain.handle('tinymist-lsp:compile', async (_event, request) => {
+handleIpc('tinymist-lsp:sync-documents', async (_event, request) => {
+  const openDocuments = normalizeLanguageServerDocuments(request.openDocuments)
+  await tinymistLsp.syncDocuments({ ...request, openDocuments })
+})
+handleIpc('tinymist-lsp:compile', async (_event, request) => {
   try {
-    return await tinymistLsp.compile(request)
+    if (
+      typeof request?.documentId !== 'string'
+      || typeof request.source !== 'string'
+      || !Number.isSafeInteger(request.version)
+    ) throw new Error('Invalid Tinymist compile request.')
+    const previewFilePath = request.previewFilePath
+      ? normalizeDocumentPath(request.previewFilePath)
+      : undefined
+    const openDocuments = normalizeLanguageServerDocuments(request.openDocuments)
+    return await tinymistLsp.compile({ ...request, previewFilePath, openDocuments })
   } catch (error) {
+    logFailure('tinymist-compile', error, { documentId: request?.documentId })
     return { error: formatTinymistExportError(error) }
   }
 })
-ipcMain.on('tinymist-lsp:stop', () => void tinymistLsp.stop())
+onIpc('tinymist-lsp:stop', () => {
+  tinymistLspStartGeneration += 1
+  return tinymistLsp.stop()
+})
 
 if (!app.requestSingleInstanceLock()) {
   app.quit()
@@ -350,11 +976,26 @@ if (!app.requestSingleInstanceLock()) {
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow()
     })
+  }).catch((error) => {
+    logFailure('startup', error)
+    app.quit()
   })
 }
 
 app.on('window-all-closed', () => {
-  void Promise.all([tinymist.stop(), tinymistLsp.stop()]).finally(() => {
+  for (const watcher of documentWatchers.values()) watcher.close()
+  documentWatchers.clear()
+  for (const timer of documentWatchTimers.values()) clearTimeout(timer)
+  documentWatchTimers.clear()
+  for (const worker of previewDiscoveryWorkers.values()) void worker.terminate()
+  previewDiscoveryWorkers.clear()
+  void Promise.all([
+    tinymist.stop(),
+    tinymistLsp.stop(),
+    settingsWrite.catch((error) => logFailure('settings-shutdown', error)),
+    sessionWrite.catch((error) => logFailure('session-shutdown', error)),
+    recoveryWrite.catch((error) => logFailure('recovery-shutdown', error)),
+  ]).finally(() => {
     if (process.platform === 'linux') app.exit(0)
     else if (process.platform !== 'darwin') app.quit()
   })

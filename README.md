@@ -9,7 +9,7 @@
 A focused desktop editor for [Typst](https://typst.app/) with Monaco editing,
 Tinymist diagnostics, live PDF output, and bundled offline documentation.
 
-*This App is 100% vibe coded for my own purposes. It just puts together already existing pieces: electron, typst, tinymist, the monaco editor &amp; pdf.js. As of right now it is intended to be fo personal use only, which means no support or guarantees are given.*
+*This App is 100% vibe coded for my own personal/business purposes. It just puts together already existing pieces: electron, typst, tinymist, the monaco editor &amp; pdf.js. Even though there are Installers and distributions for multiple OS, it is still intended to be for my personal use only, which means no support or guarantees are given.*
 
 ## Features
 

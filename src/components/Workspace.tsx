@@ -5,7 +5,7 @@ import {
   type KeyboardEvent,
   type PointerEvent,
 } from 'react'
-import type { EditorDocument, PreviewPosition, SourceCursorLocation, SourceSyncStatus } from '../types'
+import type { EditorDocument, PreviewPosition, PreviewRoot, SourceCursorLocation, SourceSyncStatus } from '../types'
 import { CompilationPane } from './CompilationPane'
 import { PdfPreview } from './PdfPreview'
 import { SourcePane } from './SourcePane'
@@ -16,6 +16,8 @@ function clamp(value: number, minimum: number, maximum: number) {
 
 export function Workspace({
   document,
+  previewRoots,
+  onPreviewRootChange,
   onSourceChange,
   vimEnabled,
   previewPositions,
@@ -32,6 +34,8 @@ export function Workspace({
   onSave,
 }: {
   document: EditorDocument
+  previewRoots?: PreviewRoot[]
+  onPreviewRootChange(filePath: string): void
   onSourceChange(value: string): void
   vimEnabled: boolean
   previewPositions: PreviewPosition[]
@@ -153,6 +157,8 @@ export function Workspace({
       />
       <PdfPreview
         document={document}
+        previewRoots={previewRoots}
+        onPreviewRootChange={onPreviewRootChange}
         positions={previewPositions}
         sourceCursorLocation={sourceCursorLocation}
         sourceSyncStatus={sourceSyncStatus}

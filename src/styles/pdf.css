@@ -10,8 +10,9 @@
 
 .preview-title {
   display: flex;
+  min-width: 0;
   height: 100%;
-  flex: 0 0 auto;
+  flex: 1 1 auto;
   align-items: center;
   gap: 7px;
   line-height: 1;
@@ -47,6 +48,62 @@
   background: var(--color-error);
 }
 
+.preview-root-select {
+  width: auto;
+  min-width: 0;
+  flex: 1 1 auto;
+  height: 22px;
+  padding: 0 22px 0 7px;
+  overflow: hidden;
+  border: 1px solid #35372f;
+  border-radius: 3px;
+  outline: 0;
+  color: #aeb1a6;
+  background: #22231e;
+  font: 9px var(--font-mono);
+  font-weight: 600;
+  letter-spacing: normal;
+  text-overflow: ellipsis;
+  text-transform: none;
+}
+
+.preview-root-name {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  color: #c7c9c1;
+  font: 500 10px var(--font-mono);
+  letter-spacing: normal;
+  text-transform: none;
+}
+
+.preview-root-directory {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.preview-root-separator,
+.preview-root-filename {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.preview-root-select option {
+  font-weight: 400;
+}
+
+.preview-root-select option:checked {
+  font-weight: 600;
+}
+
+.preview-root-select:hover,
+.preview-root-select:focus {
+  border-color: #66703e;
+  color: #e1e3db;
+}
+
 .preview-surface {
   position: relative;
   min-height: 0;
@@ -60,6 +117,7 @@
   display: flex;
   min-width: 0;
   height: 100%;
+  flex: 0 0 auto;
   align-items: center;
   justify-content: flex-end;
   gap: 1px;
@@ -344,6 +402,16 @@
   color: #666b60;
 }
 
+.theme-light .preview-root-select {
+  border-color: #c9ccc2;
+  color: #555950;
+  background: #f3f4ef;
+}
+
+.theme-light .preview-root-name {
+  color: #454940;
+}
+
 .theme-light .pdf-toolbar button:hover:not(:disabled),
 .theme-light .pdf-toolbar > a:hover:not(.disabled) {
   color: #242820;
@@ -392,6 +460,10 @@
   }
 
   .preview-title {
+    gap: 4px;
+  }
+
+  .preview-label {
     display: none;
   }
 

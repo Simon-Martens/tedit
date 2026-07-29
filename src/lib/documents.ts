@@ -75,21 +75,26 @@ export function createPdfFilename(document: EditorDocument) {
 }
 
 export function createDocument(input?: {
+  id?: string
   fileName?: string
   filePath?: string
   fileHandle?: EditorDocument['fileHandle']
   source?: string
+  diskVersion?: string
+  isDirty?: boolean
   repoCommit?: string
   repoName?: string
 }): EditorDocument {
   return {
-    id: crypto.randomUUID(),
+    id: input?.id ?? crypto.randomUUID(),
     fileName: input?.fileName ?? 'untitled.typ',
     filePath: input?.filePath,
     fileHandle: input?.fileHandle,
     source: input?.source ?? INITIAL_SOURCE,
     sourceRevision: 0,
-    isDirty: false,
+    dependencyRevision: 0,
+    isDirty: input?.isDirty ?? false,
+    diskVersion: input?.diskVersion,
     repoCommit: input?.repoCommit,
     repoName: input?.repoName,
     fallbackUuid: crypto.randomUUID(),

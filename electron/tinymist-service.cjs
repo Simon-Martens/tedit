@@ -15,23 +15,29 @@ function getFreePort() {
   })
 }
 
-function connectWebSocket(port, processHandle) {
+function connectWebSocket(port, processHandle, isCancelled) {
   return new Promise((resolve, reject) => {
     let attempts = 0
+    let retryTimer
     const connect = () => {
-      if (processHandle.exitCode !== null) {
+      if (isCancelled() || processHandle.exitCode !== null) {
         reject(new Error('Tinymist exited before its preview service was ready.'))
         return
       }
       const socket = new WebSocket(`ws://127.0.0.1:${port}`, { origin: 'http://localhost' })
       socket.binaryType = 'arraybuffer'
-      socket.once('open', () => resolve(socket))
-      socket.once('error', () => {
+      const onError = () => {
         socket.close()
         attempts += 1
         if (attempts >= 100) reject(new Error('Timed out connecting to Tinymist preview.'))
-        else setTimeout(connect, 100)
+        else retryTimer = setTimeout(connect, 100)
+      }
+      socket.once('open', () => {
+        socket.removeListener('error', onError)
+        clearTimeout(retryTimer)
+        resolve(socket)
       })
+      socket.once('error', onError)
     }
     connect()
   })
@@ -41,19 +47,35 @@ class TinymistService {
   constructor(sendEvent) {
     this.sendEvent = sendEvent
     this.generation = 0
+    this.operationQueue = Promise.resolve()
+    this.lifecycleGeneration = 0
   }
 
   status(documentId, state, message) {
+    if (state === 'error') console.error(`[tedit:tinymist-preview] ${message}`)
     this.sendEvent('tinymist:status', { documentId, state, message })
   }
 
-  async start({ documentId, filePath, source }) {
-    await this.stop()
+  start(request) {
+    const lifecycleGeneration = ++this.lifecycleGeneration
+    this.cancelCurrentOperation()
+    const result = this.operationQueue.then(() => {
+      if (lifecycleGeneration !== this.lifecycleGeneration) return
+      return this.startNow(request)
+    })
+    this.operationQueue = result.catch(() => undefined)
+    return result
+  }
+
+  async startNow({ documentId, filePath, sourceFilePath, memoryFiles = [] }) {
+    await this.stopNow()
     const generation = ++this.generation
     this.documentId = documentId
     this.filePath = path.resolve(filePath)
-    this.source = source
+    this.sourceFilePath = path.resolve(sourceFilePath)
+    this.memoryFiles = new Map(memoryFiles.map((file) => [path.resolve(file.filePath), file.source]))
     this.status(documentId, 'installing', 'Locating Tinymist...')
+    let spawnError
 
     try {
       const binary = await resolveTinymistBinary()
@@ -68,23 +90,36 @@ class TinymistService {
       ]
       const child = spawn(binary, args, {
         cwd: path.dirname(this.filePath),
-        stdio: ['ignore', 'pipe', 'pipe'],
+        stdio: ['ignore', 'ignore', 'pipe'],
         windowsHide: true,
       })
       this.child = child
       let errorOutput = ''
+      child.once('error', (error) => {
+        if (generation !== this.generation || child.teditExpectedExit) return
+        errorOutput = `${errorOutput}${error.message}`.slice(-4000)
+        spawnError = error
+      })
       child.stderr.on('data', (chunk) => {
         errorOutput = `${errorOutput}${chunk}`.slice(-4000)
       })
       child.once('exit', (code) => {
-        if (generation !== this.generation) return
+        if (generation !== this.generation || child.teditExpectedExit) return
         this.status(documentId, 'error', errorOutput.trim() || `Tinymist exited with code ${code}.`)
       })
 
-      const [dataSocket, controlSocket] = await Promise.all([
-        connectWebSocket(dataPort, child),
-        connectWebSocket(controlPort, child),
-      ])
+      const acquiredSockets = []
+      let dataSocket
+      let controlSocket
+      try {
+        dataSocket = await connectWebSocket(dataPort, child, () => generation !== this.generation)
+        acquiredSockets.push(dataSocket)
+        controlSocket = await connectWebSocket(controlPort, child, () => generation !== this.generation)
+        acquiredSockets.push(controlSocket)
+      } catch (error) {
+        for (const socket of acquiredSockets) socket.close()
+        throw error
+      }
       if (generation !== this.generation) {
         dataSocket.close()
         controlSocket.close()
@@ -100,8 +135,10 @@ class TinymistService {
       this.sendLocate(this.latestLocate)
     } catch (error) {
       if (generation !== this.generation) return
-      this.status(documentId, 'error', error instanceof Error ? error.message : String(error))
-      await this.stop(false)
+      const effectiveError = spawnError ?? error
+      const message = effectiveError instanceof Error ? effectiveError.message : String(effectiveError)
+      this.status(documentId, 'error', spawnError ? `Could not start Tinymist preview: ${message}` : message)
+      this.cancelCurrentOperation()
     }
   }
 
@@ -122,6 +159,9 @@ class TinymistService {
       } else {
         this.status(this.documentId, 'starting', 'Updating source positions...')
       }
+      if (message.kind === 'CompileSuccess' || message.kind === 'CompileError') {
+        this.sendEvent('tinymist-lsp:dependency-change', { documentId: this.documentId })
+      }
     }
   }
 
@@ -141,12 +181,12 @@ class TinymistService {
 
   sendMemoryFiles(event) {
     if (this.controlSocket?.readyState !== WebSocket.OPEN || !this.filePath) return
-    this.controlSocket.send(JSON.stringify({ event, files: { [this.filePath]: this.source } }))
+    this.controlSocket.send(JSON.stringify({ event, files: Object.fromEntries(this.memoryFiles) }))
   }
 
-  update({ documentId, source }) {
+  update({ documentId, memoryFiles = [] }) {
     if (documentId !== this.documentId) return
-    this.source = source
+    this.memoryFiles = new Map(memoryFiles.map((file) => [path.resolve(file.filePath), file.source]))
     this.sendMemoryFiles('updateMemoryFiles')
   }
 
@@ -165,13 +205,44 @@ class TinymistService {
     const { line, character } = location
     this.controlSocket.send(JSON.stringify({
       event: 'panelScrollTo',
-      filepath: this.filePath,
+      filepath: this.sourceFilePath,
       line,
       character,
     }))
   }
 
-  async stop(incrementGeneration = true) {
+  stop() {
+    const lifecycleGeneration = ++this.lifecycleGeneration
+    this.cancelCurrentOperation()
+    const result = this.operationQueue.then(() => {
+      if (lifecycleGeneration !== this.lifecycleGeneration) return
+      return this.stopNow()
+    })
+    this.operationQueue = result.catch(() => undefined)
+    return result
+  }
+
+  cancelCurrentOperation() {
+    this.generation += 1
+    this.dataSocket?.close()
+    this.controlSocket?.close()
+    this.dataSocket = undefined
+    this.controlSocket = undefined
+    clearTimeout(this.locateSettleTimer)
+    this.locateSettleTimer = undefined
+    const child = this.child
+    this.child = undefined
+    if (child && child.exitCode === null) {
+      child.teditExpectedExit = true
+      child.kill()
+      const forceTimer = setTimeout(() => {
+        if (child.exitCode === null) child.kill('SIGKILL')
+      }, 500)
+      forceTimer.unref?.()
+    }
+  }
+
+  async stopNow(incrementGeneration = true) {
     if (incrementGeneration) this.generation += 1
     this.dataSocket?.close()
     this.controlSocket?.close()
@@ -184,7 +255,10 @@ class TinymistService {
     this.child = undefined
     this.documentId = undefined
     this.filePath = undefined
+    this.sourceFilePath = undefined
+    this.memoryFiles = new Map()
     if (child && child.exitCode === null) {
+      child.teditExpectedExit = true
       const exited = new Promise((resolve) => child.once('exit', resolve))
       child.kill()
       let timeout

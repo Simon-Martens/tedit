@@ -7,17 +7,32 @@ const DISABLED_STATUS: SourceSyncStatus = {
   message: 'Save the document to enable source synchronization.',
 }
 
-export function useSourcePreviewSync(document: EditorDocument | undefined, enabled: boolean) {
+export function useSourcePreviewSync(
+  document: EditorDocument | undefined,
+  documents: EditorDocument[],
+  enabled: boolean,
+) {
   const [positions, setPositions] = useState<PreviewPosition[]>([])
   const [sourceCursorLocation, setSourceCursorLocation] = useState<SourceCursorLocation>()
   const [status, setStatus] = useState<SourceSyncStatus>(DISABLED_STATUS)
   const lastLocationRef = useRef<SourceCursorLocation | undefined>(undefined)
   const requestIdRef = useRef(0)
+  const memoryFiles = documents.flatMap((openDocument) => openDocument.filePath ? [{
+    filePath: openDocument.filePath,
+    source: openDocument.source,
+  }] : [])
+  const memoryFilesKey = documents
+    .flatMap((openDocument) => openDocument.filePath
+      ? [`${openDocument.filePath}\0${openDocument.sourceRevision}`]
+      : [])
+    .join('\u0001')
+  const previewFilePath = document?.previewRootPath ?? document?.filePath
   const canLocate = enabled
     && document !== undefined
     && status.state === 'ready'
     && document.compileState === 'success'
     && document.attemptedRevision === document.sourceRevision
+    && document.attemptedDependencyRevision === document.dependencyRevision
   const canLocateRef = useRef(canLocate)
   canLocateRef.current = canLocate
 
@@ -31,16 +46,8 @@ export function useSourcePreviewSync(document: EditorDocument | undefined, enabl
       setStatus(DISABLED_STATUS)
       return
     }
-    if (!enabled) {
-      setStatus({
-        documentId: document.id,
-        state: 'disabled',
-        message: 'Source synchronization is disabled in settings.',
-      })
-      return
-    }
     setStatus({ documentId: document.id, state: 'starting', message: 'Starting source synchronization...' })
-    if (!desktop || !document.filePath) {
+    if (!desktop || !document.filePath || !previewFilePath) {
       setStatus({ ...DISABLED_STATUS, documentId: document.id })
       return
     }
@@ -57,8 +64,9 @@ export function useSourcePreviewSync(document: EditorDocument | undefined, enabl
     })
     void desktop.startSourceSync({
       documentId: document.id,
-      filePath: document.filePath,
-      source: document.source,
+      filePath: previewFilePath,
+      sourceFilePath: document.filePath,
+      memoryFiles,
     }).catch((error) => {
       setStatus({
         documentId: document.id,
@@ -72,18 +80,19 @@ export function useSourcePreviewSync(document: EditorDocument | undefined, enabl
       removeStatusListener()
       desktop.stopSourceSync()
     }
-  }, [document?.id, document?.filePath, enabled])
+  }, [document?.id, document?.filePath, previewFilePath, enabled])
 
   useEffect(() => {
-    if (!enabled || !window.typstDesktop || !document?.filePath) return
-    window.typstDesktop.updateSourceSync({ documentId: document.id, source: document.source })
-  }, [document?.id, document?.filePath, document?.sourceRevision, enabled])
+    if (!window.typstDesktop || !document?.filePath) return
+    window.typstDesktop.updateSourceSync({ documentId: document.id, memoryFiles })
+  }, [document?.id, document?.filePath, memoryFilesKey])
 
   useEffect(() => {
     if (enabled && document && (
       status.state === 'ready'
       && document.compileState === 'success'
       && document.attemptedRevision === document.sourceRevision
+      && document.attemptedDependencyRevision === document.dependencyRevision
       && lastLocationRef.current
     )) {
       requestIdRef.current += 1
@@ -93,7 +102,16 @@ export function useSourcePreviewSync(document: EditorDocument | undefined, enabl
         ...lastLocationRef.current.lookup,
       })
     }
-  }, [document?.id, document?.compileState, document?.attemptedRevision, document?.sourceRevision, status.state, enabled])
+  }, [
+    document?.id,
+    document?.compileState,
+    document?.attemptedRevision,
+    document?.sourceRevision,
+    document?.attemptedDependencyRevision,
+    document?.dependencyRevision,
+    status.state,
+    enabled,
+  ])
 
   const locate = (location: SourceCursorLocation) => {
     if (!enabled) return
