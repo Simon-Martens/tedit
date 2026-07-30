@@ -89,6 +89,8 @@
     },
     "mac": {
       "icon": "build/icon.png",
+      "identity": "-",
+      "hardenedRuntime": false,
       "target": [
         "dmg"
       ],

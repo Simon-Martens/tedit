@@ -32,8 +32,9 @@ Installers and SHA-256 checksums are published on the
 
 Release builds download Tinymist `0.15.2`, which embeds Typst `0.15.0`, on
 first use when no compatible local binary exists. Matching Typst `0.15.0`
-documentation remains bundled. Windows and macOS installers are currently
-unsigned and may trigger operating-system security warnings.
+documentation remains bundled. The Windows installer is unsigned. macOS builds
+are ad-hoc signed so their native executables can run on Apple Silicon, but are
+not notarized. Both platforms may show operating-system security warnings.
 
 ## Architecture
 

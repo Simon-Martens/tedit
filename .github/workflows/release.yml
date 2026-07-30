@@ -89,11 +89,15 @@ jobs:
             os: macos-latest
             command: npx electron-builder --mac dmg --x64 --publish never
             files: release/*.dmg
+            app_path: release/mac/tedit.app
+            architecture: x86_64
           - name: macOS arm64
             artifact_name: installer-macos-arm64
             os: macos-latest
             command: npx electron-builder --mac dmg --arm64 --publish never
             files: release/*.dmg
+            app_path: release/mac-arm64/tedit.app
+            architecture: arm64
 
     env:
       CSC_IDENTITY_AUTO_DISCOVERY: 'false'
@@ -124,6 +128,15 @@ jobs:
 
       - name: Build installer
         run: ${{ matrix.command }}
+
+      - name: Verify macOS application
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          codesign --verify --deep --strict "${{ matrix.app_path }}"
+          codesign_details="$(codesign --display --verbose=4 "${{ matrix.app_path }}" 2>&1)"
+          grep -q '^Signature=adhoc$' <<< "$codesign_details"
+          test "$(lipo -archs "${{ matrix.app_path }}/Contents/MacOS/tedit")" = "${{ matrix.architecture }}"
 
       - name: Upload installer
         uses: actions/upload-artifact@v4

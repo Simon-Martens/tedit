@@ -21,9 +21,12 @@ The installers include:
 Tinymist is not bundled. On first use, tedit uses a compatible local binary or
 downloads Tinymist `0.15.2` into the user's versioned application-data cache.
 
-The macOS and Windows installers are currently unsigned. Users may therefore
-see operating-system security warnings. The workflow explicitly disables
-automatic macOS signing with `CSC_IDENTITY_AUTO_DISCOVERY=false`.
+The Windows installer is unsigned. The macOS application is ad-hoc signed so
+that its native executables can run on both Intel and Apple Silicon, but it is
+not notarized. Users may therefore still see operating-system security
+warnings. The workflow disables certificate auto-discovery with
+`CSC_IDENTITY_AUTO_DISCOVERY=false`; `build.mac.identity` explicitly selects
+ad-hoc signing instead.
 
 ## Versioning
 
