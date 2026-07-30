@@ -273,13 +273,22 @@ a:focus-visible {
 
 .footer-tinymist {
   display: flex;
-  flex: 0 0 auto;
+  min-width: 0;
+  flex: 0 1 auto;
   align-items: center;
   gap: 5px;
 }
 
+.footer-service-label {
+  max-width: min(360px, 32vw);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .footer-service {
   display: flex;
+  min-width: 0;
   flex: 0 0 auto;
   align-items: center;
   gap: 3px;

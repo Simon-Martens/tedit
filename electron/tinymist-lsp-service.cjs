@@ -92,7 +92,9 @@ class TinymistLspService {
     let spawnError
 
     try {
-      const binary = await resolveTinymistBinary()
+      const binary = await resolveTinymistBinary((message) => {
+        if (generation === this.generation) this.status(documentId, 'installing', message)
+      })
       if (generation !== this.generation) return
       this.status(documentId, 'starting', 'Starting Tinymist language server...')
       const child = spawn(binary, ['lsp'], {
@@ -170,7 +172,7 @@ class TinymistLspService {
           },
         },
         initializationOptions: { exportPdf: 'never' },
-      }), 10000, 'Timed out starting Tinymist language server.')
+      }), 30_000, 'Timed out starting Tinymist language server.')
       if (generation !== this.generation) return
       await connection.sendNotification('initialized', {})
       if (generation !== this.generation) return

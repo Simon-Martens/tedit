@@ -30,9 +30,10 @@ Tinymist diagnostics, live PDF output, and bundled offline documentation.
 Installers and SHA-256 checksums are published on the
 [GitHub Releases](https://github.com/Simon-Martens/tedit/releases) page.
 
-Release builds currently include Tinymist `0.15.2`, which embeds Typst
-`0.15.0`, plus matching Typst `0.15.0` documentation. Windows and macOS
-installers are currently unsigned and may trigger operating-system warnings.
+Release builds download Tinymist `0.15.2`, which embeds Typst `0.15.0`, on
+first use when no compatible local binary exists. Matching Typst `0.15.0`
+documentation remains bundled. Windows and macOS installers are currently
+unsigned and may trigger operating-system security warnings.
 
 ## Architecture
 
@@ -49,8 +50,13 @@ only for synchronization.
 Tinymist is resolved in this order:
 
 1. `TINYMIST_PATH`
-2. the binary packaged with tedit
-3. a `tinymist` executable on `PATH` during development
+2. a compatible `tinymist` executable on `PATH`
+3. the versioned per-user download cache
+4. a verified download from the configured GitHub release
+
+tedit accepts only a Tinymist binary that embeds the configured Typst version.
+Downloaded archives are checked against SHA-256 hashes pinned in the app and
+are never included in tedit installers.
 
 ## Run Locally
 
@@ -67,10 +73,11 @@ Install dependencies:
 npm install
 ```
 
-Stage Tinymist for the current platform:
+Verify that all configured Tinymist release assets still match their pinned
+checksums:
 
 ```sh
-npm run package-tinymist
+npm run verify-tinymist-release
 ```
 
 Build the offline documentation from a Typst `v0.15.0` checkout:
@@ -97,8 +104,7 @@ Validate the renderer production build:
 npm run build
 ```
 
-Build documentation, package Tinymist, compile the renderer, and create a
-host-platform installer:
+Build documentation, compile the renderer, and create a host-platform installer:
 
 ```sh
 npm run dist

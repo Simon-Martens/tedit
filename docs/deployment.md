@@ -16,9 +16,10 @@ The release workflow produces:
 The installers include:
 
 - the renderer and Electron main process
-- Tinymist `0.15.2`
-- the Apache license distributed with Tinymist
 - offline web and print documentation for Typst `0.15.0`
+
+Tinymist is not bundled. On first use, tedit uses a compatible local binary or
+downloads Tinymist `0.15.2` into the user's versioned application-data cache.
 
 The macOS and Windows installers are currently unsigned. Users may therefore
 see operating-system security warnings. The workflow explicitly disables
@@ -46,19 +47,19 @@ fix it and publish the next prerelease version.
 
 Three upstream versions must remain aligned:
 
-1. `TINYMIST_VERSION` in `electron/tinymist-release.cjs` selects the bundled
+1. `TINYMIST_VERSION` in `electron/tinymist-release.cjs` selects the downloaded
    Tinymist release.
 2. `TINYMIST_TYPST_VERSION` in the same file records the Typst version embedded
    in that Tinymist release.
-3. `TYPST_DOCS_REF` in `.github/workflows/release.yml` selects the documentation
+3. The target hashes in the same file pin each supported release archive.
+4. `TYPST_DOCS_REF` in `.github/workflows/release.yml` selects the documentation
    source and must be `v${TINYMIST_TYPST_VERSION}`.
 
-Do not update one of these values independently. Confirm the embedded Typst
-version with the candidate Tinymist binary:
+Do not update one of these values independently. Verify every configured asset
+and pinned checksum:
 
 ```sh
-npm run package-tinymist
-resources/tinymist/linux-x64/tinymist --version
+npm run verify-tinymist-release
 ```
 
 The documentation packaging script rejects a Typst checkout whose workspace
@@ -109,7 +110,6 @@ The following directories are generated and ignored:
 - `dist/`
 - `release/`
 - `resources/typst-docs/`
-- `resources/tinymist/`
 
 They must not be committed.
 
@@ -180,7 +180,7 @@ node --check electron/main.cjs
 node --check electron/preload.cjs
 node --check electron/tinymist-lsp-service.cjs
 node --check scripts/package-docs.mjs
-node --check scripts/package-tinymist.mjs
+node --check scripts/verify-tinymist-release.mjs
 ```
 
 Start the application and perform a manual smoke test:
@@ -204,23 +204,20 @@ At minimum, verify:
 - tabs activate, close, reorder, and report unsaved state correctly
 - compilation failures show only the useful inner diagnostic
 
-## 5. Validate Bundled Tinymist
+## 5. Validate Runtime Tinymist
 
-Package the native binary for the host platform:
+Verify that all supported GitHub release assets exist and their published
+checksums still match the hashes pinned in `electron/tinymist-release.cjs`:
 
 ```sh
-npm run package-tinymist
+npm run verify-tinymist-release
 ```
 
-The script downloads the configured release, verifies its upstream SHA-256
-checksum, removes duplicate extracted files, and stages exactly:
-
-```text
-resources/tinymist/<platform>-<arch>/tinymist[.exe]
-resources/tinymist/<platform>-<arch>/LICENSE-TINYMIST
-```
-
-Confirm that no second extracted binary directory remains.
+Launch once with a fresh user-data directory and no compatible Tinymist on
+`PATH`. Confirm that the footer reports download, verification, extraction, and
+startup progress; compilation succeeds afterward; and restarting uses the
+cached binary. Also confirm that an incompatible PATH binary is ignored. No
+Tinymist executable may be present in the packaged application resources.
 
 ## 6. Validate Offline Documentation
 
@@ -249,8 +246,8 @@ generated site must contain `site/index.html`, `site/assets/search.json`,
 
 ## 7. Build a Local Installer
 
-When matching documentation and Tinymist resources are already staged, build a
-host-platform installer:
+When matching documentation resources are already staged, build a host-platform
+installer:
 
 ```sh
 npm run build
@@ -258,9 +255,9 @@ npx electron-builder --linux AppImage --x64 --publish never
 ```
 
 Use the platform command appropriate for the host. `npm run dist` performs the
-documentation build, Tinymist packaging, renderer build, and Electron Builder
-step together, but its default documentation checkout is `../typst` and must
-have the required Typst version.
+documentation build, renderer build, and Electron Builder step together, but
+its default documentation checkout is `../typst` and must have the required
+Typst version.
 
 Inspect the installer under `release/` and, where possible, launch it once.
 
@@ -279,8 +276,9 @@ git log --oneline -10
 Confirm that:
 
 - the package and lockfile versions match
-- upstream Tinymist, Typst, and docs versions match
+- upstream Tinymist, pinned hashes, Typst, and docs versions match
 - the release workflow still targets all four supported installers
+- no installer contains a Tinymist executable
 - no generated resources or credentials are staged
 - all intended fixes and documentation are included
 

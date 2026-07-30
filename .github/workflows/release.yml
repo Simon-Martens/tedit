@@ -45,6 +45,9 @@ jobs:
           RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
         run: node -e "const version = require('./package.json').version; if ('v' + version !== process.env.RELEASE_TAG) throw new Error('Package version ' + version + ' does not match ' + process.env.RELEASE_TAG)"
 
+      - name: Verify Tinymist release assets
+        run: npm run verify-tinymist-release
+
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
 
@@ -74,29 +77,21 @@ jobs:
           - name: Linux x64
             artifact_name: installer-linux-x64
             os: ubuntu-latest
-            package_platform: linux
-            package_arch: x64
             command: npx electron-builder --linux AppImage --x64 --publish never
             files: release/*.AppImage
           - name: Windows x64
             artifact_name: installer-windows-x64
             os: windows-latest
-            package_platform: win32
-            package_arch: x64
             command: npx electron-builder --win nsis --x64 --publish never
             files: release/*.exe
           - name: macOS x64
             artifact_name: installer-macos-x64
             os: macos-latest
-            package_platform: darwin
-            package_arch: x64
             command: npx electron-builder --mac dmg --x64 --publish never
             files: release/*.dmg
           - name: macOS arm64
             artifact_name: installer-macos-arm64
             os: macos-latest
-            package_platform: darwin
-            package_arch: arm64
             command: npx electron-builder --mac dmg --arm64 --publish never
             files: release/*.dmg
 
@@ -126,9 +121,6 @@ jobs:
 
       - name: Build application
         run: npm run build
-
-      - name: Package Tinymist
-        run: npm run package-tinymist -- --platform ${{ matrix.package_platform }} --arch ${{ matrix.package_arch }}
 
       - name: Build installer
         run: ${{ matrix.command }}

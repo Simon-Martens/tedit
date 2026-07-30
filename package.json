@@ -2,7 +2,7 @@
   "name": "tedit",
   "description": "A desktop Typst editor with live PDF preview.",
   "private": true,
-  "version": "0.1.0-beta.2",
+  "version": "0.1.0-beta.3",
   "type": "module",
   "main": "electron/main.cjs",
   "desktopName": "tedit.desktop",
@@ -14,20 +14,23 @@
     "preview": "vite preview",
     "generate-icons": "node scripts/generate-icons.mjs",
     "package-docs": "node scripts/package-docs.mjs",
-    "package-tinymist": "node scripts/package-tinymist.mjs",
-    "package": "npm run package-docs && npm run package-tinymist && npm run build && electron-builder --dir",
-    "dist": "npm run package-docs && npm run package-tinymist && npm run build && electron-builder"
+    "verify-tinymist-release": "node scripts/verify-tinymist-release.mjs",
+    "package": "npm run package-docs && npm run build && electron-builder --dir",
+    "dist": "npm run package-docs && npm run build && electron-builder"
   },
   "dependencies": {
     "@monaco-editor/react": "^4.7.0",
     "@remixicon/react": "^4.9.0",
+    "extract-zip": "^2.0.1",
     "monaco-editor": "^0.56.0",
     "monaco-vim": "^0.4.4",
     "pdfjs-dist": "^6.1.200",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
+    "tar": "^7.5.22",
     "vscode-jsonrpc": "^9.0.1",
-    "ws": "^8.21.1"
+    "ws": "^8.21.1",
+    "yauzl": "^2.10.0"
   },
   "devDependencies": {
     "@types/react": "^19.2.0",
@@ -38,8 +41,6 @@
     "cross-env": "^10.0.0",
     "electron": "^43.2.0",
     "electron-builder": "^26.15.3",
-    "extract-zip": "^2.0.1",
-    "tar": "^7.5.22",
     "typescript": "^7.0.2",
     "vite": "^8.1.5",
     "wait-on": "^9.1.0"
@@ -63,13 +64,6 @@
       {
         "from": "resources/typst-docs",
         "to": "typst-docs",
-        "filter": [
-          "**/*"
-        ]
-      },
-      {
-        "from": "resources/tinymist",
-        "to": "tinymist",
         "filter": [
           "**/*"
         ]

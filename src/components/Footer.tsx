@@ -40,16 +40,27 @@ export function Footer({
           <span
             className={`footer-tinymist footer-tinymist-${languageServerStatus.state}`}
             title={languageServerStatus.message}
+            role="status"
+            aria-live="polite"
           >
             <i aria-hidden="true" />
-            Tinymist
+            <span className="footer-service-label">
+              {languageServerStatus.state === 'installing' || languageServerStatus.state === 'error'
+                ? languageServerStatus.message
+                : 'Tinymist'}
+            </span>
           </span>
           <button
             type="button"
             className="footer-service-restart"
             title="Restart Tinymist"
             aria-label="Restart Tinymist"
-            disabled={!document || languageServerStatus.state === 'disabled'}
+            disabled={
+              !document
+              || languageServerStatus.state === 'disabled'
+              || languageServerStatus.state === 'installing'
+              || languageServerStatus.state === 'starting'
+            }
             onClick={onRestartLanguageServer}
           >
             <Icon name="restart" />

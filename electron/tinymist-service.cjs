@@ -29,7 +29,7 @@ function connectWebSocket(port, processHandle, isCancelled) {
       const onError = () => {
         socket.close()
         attempts += 1
-        if (attempts >= 100) reject(new Error('Timed out connecting to Tinymist preview.'))
+        if (attempts >= 300) reject(new Error('Timed out connecting to Tinymist preview.'))
         else retryTimer = setTimeout(connect, 100)
       }
       socket.once('open', () => {
@@ -78,7 +78,9 @@ class TinymistService {
     let spawnError
 
     try {
-      const binary = await resolveTinymistBinary()
+      const binary = await resolveTinymistBinary((message) => {
+        if (generation === this.generation) this.status(documentId, 'installing', message)
+      })
       if (generation !== this.generation) return
       this.status(documentId, 'starting', 'Starting source synchronization...')
       const [dataPort, controlPort] = await Promise.all([getFreePort(), getFreePort()])
