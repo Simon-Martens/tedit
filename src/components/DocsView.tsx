@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Icon } from './Icon'
 import typstLogo from '../assets/typst-logo.svg'
 import { createDocument } from '../lib/documents'
@@ -28,6 +28,11 @@ function PrintDocumentation() {
 
 export function DocsView({ open, onClose }: { open: boolean; onClose(): void }) {
   const [format, setFormat] = useState<'web' | 'print'>('web')
+
+  useEffect(() => {
+    setFormat('web')
+  }, [open])
+
   return (
     <section className={`docs-view ${open ? 'open' : 'closed'}`} aria-label="Typst documentation" aria-hidden={!open}>
       <header className="docs-view-header">

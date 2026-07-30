@@ -8,6 +8,8 @@ const defaultSettings = {
   autoScrollEnabled: true,
   lightThemeEnabled: false,
   foldingEnabled: true,
+  autocompleteEnabled: true,
+  errorHighlightingEnabled: true,
 }
 
 function createSettingsPersistence({ app, handleIpc }) {

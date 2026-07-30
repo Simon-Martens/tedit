@@ -132,6 +132,8 @@ export interface AppSettings {
   autoScrollEnabled: boolean
   lightThemeEnabled: boolean
   foldingEnabled: boolean
+  autocompleteEnabled: boolean
+  errorHighlightingEnabled: boolean
 }
 
 export interface DesktopSession {

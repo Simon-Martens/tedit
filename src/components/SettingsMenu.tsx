@@ -12,6 +12,10 @@ export function SettingsMenu({
   onLightThemeEnabledChange,
   foldingEnabled,
   onFoldingEnabledChange,
+  autocompleteEnabled,
+  onAutocompleteEnabledChange,
+  errorHighlightingEnabled,
+  onErrorHighlightingEnabledChange,
 }: {
   vimEnabled: boolean
   onVimEnabledChange(enabled: boolean): void
@@ -23,6 +27,10 @@ export function SettingsMenu({
   onLightThemeEnabledChange(enabled: boolean): void
   foldingEnabled: boolean
   onFoldingEnabledChange(enabled: boolean): void
+  autocompleteEnabled: boolean
+  onAutocompleteEnabledChange(enabled: boolean): void
+  errorHighlightingEnabled: boolean
+  onErrorHighlightingEnabledChange(enabled: boolean): void
 }) {
   const [open, setOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -89,6 +97,28 @@ export function SettingsMenu({
               type="checkbox"
               checked={foldingEnabled}
               onChange={(event) => onFoldingEnabledChange(event.target.checked)}
+            />
+          </label>
+          <label className="setting-row">
+            <span>
+              <strong>Autocomplete</strong>
+              <small>Show Tinymist code suggestions</small>
+            </span>
+            <input
+              type="checkbox"
+              checked={autocompleteEnabled}
+              onChange={(event) => onAutocompleteEnabledChange(event.target.checked)}
+            />
+          </label>
+          <label className="setting-row">
+            <span>
+              <strong>Error highlighting</strong>
+              <small>Underline diagnostics in the source</small>
+            </span>
+            <input
+              type="checkbox"
+              checked={errorHighlightingEnabled}
+              onChange={(event) => onErrorHighlightingEnabledChange(event.target.checked)}
             />
           </label>
           <label className="setting-row">

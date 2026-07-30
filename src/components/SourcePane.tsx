@@ -100,6 +100,8 @@ export function SourcePane({
   vimEnabled,
   lightThemeEnabled,
   foldingEnabled,
+  autocompleteEnabled,
+  errorHighlightingEnabled,
   onCursorPositionChange,
   onCursorChange,
   onSave,
@@ -116,6 +118,8 @@ export function SourcePane({
   vimEnabled: boolean
   lightThemeEnabled: boolean
   foldingEnabled: boolean
+  autocompleteEnabled: boolean
+  errorHighlightingEnabled: boolean
   onCursorPositionChange(location: SourceCursorLocation): void
   onCursorChange(line: number, column: number): void
   onSave(): void
@@ -140,6 +144,8 @@ export function SourcePane({
   const languageServerDocumentsRef = useRef(languageServerDocuments)
   const initiallyCollapsedModelsRef = useRef(new Set<string>())
   const foldingEnabledRef = useRef(foldingEnabled)
+  const autocompleteEnabledRef = useRef(autocompleteEnabled)
+  const errorHighlightingEnabledRef = useRef(errorHighlightingEnabled)
   const diagnostics = document.languageServerDiagnostics ?? document.diagnostics
   const diagnosticsRef = useRef(diagnostics)
   const cursorCallbackRef = useRef(onCursorPositionChange)
@@ -153,6 +159,8 @@ export function SourcePane({
   documentRef.current = document
   languageServerDocumentsRef.current = languageServerDocuments
   foldingEnabledRef.current = foldingEnabled
+  autocompleteEnabledRef.current = autocompleteEnabled
+  errorHighlightingEnabledRef.current = errorHighlightingEnabled
   diagnosticsRef.current = diagnostics
 
   const initializeVim = (editor: Parameters<OnMount>[0]) => {
@@ -229,7 +237,8 @@ export function SourcePane({
     const monaco = monacoRef.current
     const model = editor?.getModel()
     if (!monaco || !model) return
-    monaco.editor.setModelMarkers(model, 'typst', diagnosticsRef.current.map((diagnostic) => {
+    const visibleDiagnostics = errorHighlightingEnabledRef.current ? diagnosticsRef.current : []
+    monaco.editor.setModelMarkers(model, 'typst', visibleDiagnostics.map((diagnostic) => {
       const startLineNumber = Math.min(model.getLineCount(), Math.max(1, diagnostic.startLineNumber))
       const endLineNumber = Math.min(model.getLineCount(), Math.max(startLineNumber, diagnostic.endLineNumber))
       const startColumn = Math.min(
@@ -292,7 +301,15 @@ export function SourcePane({
 
   useEffect(() => {
     applyDiagnostics()
-  }, [diagnostics])
+  }, [diagnostics, errorHighlightingEnabled])
+
+  useEffect(() => {
+    editorRef.current?.updateOptions({
+      quickSuggestions: autocompleteEnabled,
+      suggestOnTriggerCharacters: autocompleteEnabled,
+      wordBasedSuggestions: autocompleteEnabled ? 'matchingDocuments' : 'off',
+    })
+  }, [autocompleteEnabled])
 
   useEffect(() => {
     const commands = VimMode.commands as typeof VimMode.commands & { save?: () => void }
@@ -433,7 +450,9 @@ export function SourcePane({
                 context: MonacoLanguages.CompletionContext,
               ) => {
                 const desktop = window.typstDesktop
-                if (!desktop || model !== editor.getModel()) return { suggestions: [] }
+                if (!autocompleteEnabledRef.current || !desktop || model !== editor.getModel()) {
+                  return { suggestions: [] }
+                }
                 const currentDocument = documentRef.current
                 const source = model.getValue()
                 let activeDocumentFound = false
@@ -563,6 +582,9 @@ export function SourcePane({
             padding: { top: 14, bottom: 14 },
             folding: foldingEnabled,
             showFoldingControls: foldingEnabled ? 'always' : 'never',
+            quickSuggestions: autocompleteEnabled,
+            suggestOnTriggerCharacters: autocompleteEnabled,
+            wordBasedSuggestions: autocompleteEnabled ? 'matchingDocuments' : 'off',
             scrollBeyondLastLine: false,
             smoothScrolling: true,
             renderLineHighlight: 'none',

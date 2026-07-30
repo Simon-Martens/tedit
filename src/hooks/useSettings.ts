@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { reportError } from '../lib/logging'
+import type { AppSettings } from '../types'
 
 function browserSetting(key: string, fallback: boolean) {
   const value = localStorage.getItem(key)
@@ -21,6 +22,12 @@ export function useSettings() {
   ))
   const [foldingEnabled, setFoldingEnabled] = useState(() => (
     window.typstDesktop ? true : browserSetting('tedit.code-folding', true)
+  ))
+  const [autocompleteEnabled, setAutocompleteEnabled] = useState(() => (
+    window.typstDesktop ? true : browserSetting('tedit.autocomplete', true)
+  ))
+  const [errorHighlightingEnabled, setErrorHighlightingEnabled] = useState(() => (
+    window.typstDesktop ? true : browserSetting('tedit.error-highlighting', true)
   ))
 
   useEffect(() => {
@@ -44,16 +51,26 @@ export function useSettings() {
   }, [foldingEnabled])
 
   useEffect(() => {
+    if (!window.typstDesktop) localStorage.setItem('tedit.autocomplete', String(autocompleteEnabled))
+  }, [autocompleteEnabled])
+
+  useEffect(() => {
+    if (!window.typstDesktop) localStorage.setItem('tedit.error-highlighting', String(errorHighlightingEnabled))
+  }, [errorHighlightingEnabled])
+
+  useEffect(() => {
     window.typstDesktop?.getSettings().then((settings) => {
       setVimEnabled(settings.vimEnabled)
       setShowPreviewPosition(settings.showPreviewPosition)
       setAutoScrollEnabled(settings.autoScrollEnabled)
       setLightThemeEnabled(settings.lightThemeEnabled)
       setFoldingEnabled(settings.foldingEnabled)
+      setAutocompleteEnabled(settings.autocompleteEnabled)
+      setErrorHighlightingEnabled(settings.errorHighlightingEnabled)
     }).catch((error) => reportError('settings-load', error))
   }, [])
 
-  const changeSetting = <Key extends 'vimEnabled' | 'showPreviewPosition' | 'autoScrollEnabled' | 'lightThemeEnabled' | 'foldingEnabled'>(
+  const changeSetting = <Key extends keyof AppSettings>(
     key: Key,
     value: boolean,
     setter: (value: boolean) => void,
@@ -68,10 +85,14 @@ export function useSettings() {
     autoScrollEnabled,
     lightThemeEnabled,
     foldingEnabled,
+    autocompleteEnabled,
+    errorHighlightingEnabled,
     changeVimEnabled: (value: boolean) => changeSetting('vimEnabled', value, setVimEnabled),
     changeShowPreviewPosition: (value: boolean) => changeSetting('showPreviewPosition', value, setShowPreviewPosition),
     changeAutoScrollEnabled: (value: boolean) => changeSetting('autoScrollEnabled', value, setAutoScrollEnabled),
     changeLightThemeEnabled: (value: boolean) => changeSetting('lightThemeEnabled', value, setLightThemeEnabled),
     changeFoldingEnabled: (value: boolean) => changeSetting('foldingEnabled', value, setFoldingEnabled),
+    changeAutocompleteEnabled: (value: boolean) => changeSetting('autocompleteEnabled', value, setAutocompleteEnabled),
+    changeErrorHighlightingEnabled: (value: boolean) => changeSetting('errorHighlightingEnabled', value, setErrorHighlightingEnabled),
   }
 }

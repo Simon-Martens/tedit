@@ -107,6 +107,10 @@ function App() {
         onLightThemeEnabledChange={settings.changeLightThemeEnabled}
         foldingEnabled={settings.foldingEnabled}
         onFoldingEnabledChange={settings.changeFoldingEnabled}
+        autocompleteEnabled={settings.autocompleteEnabled}
+        onAutocompleteEnabledChange={settings.changeAutocompleteEnabled}
+        errorHighlightingEnabled={settings.errorHighlightingEnabled}
+        onErrorHighlightingEnabledChange={settings.changeErrorHighlightingEnabled}
       />
       <TabBar
         documents={editor.documents}
@@ -131,6 +135,8 @@ function App() {
           autoScrollEnabled={settings.autoScrollEnabled}
           lightThemeEnabled={settings.lightThemeEnabled}
           foldingEnabled={settings.foldingEnabled}
+          autocompleteEnabled={settings.autocompleteEnabled}
+          errorHighlightingEnabled={settings.errorHighlightingEnabled}
           compilationOpen={compilation.open}
           compilationAutoSized={compilation.mode === 'error'}
           onSave={() => void files.saveFile()}

@@ -31,6 +31,8 @@ export function Workspace({
   autoScrollEnabled,
   lightThemeEnabled,
   foldingEnabled,
+  autocompleteEnabled,
+  errorHighlightingEnabled,
   compilationOpen,
   compilationAutoSized,
   onSave,
@@ -50,6 +52,8 @@ export function Workspace({
   autoScrollEnabled: boolean
   lightThemeEnabled: boolean
   foldingEnabled: boolean
+  autocompleteEnabled: boolean
+  errorHighlightingEnabled: boolean
   compilationOpen: boolean
   compilationAutoSized: boolean
   onSave(): void
@@ -141,6 +145,8 @@ export function Workspace({
             vimEnabled={vimEnabled}
             lightThemeEnabled={lightThemeEnabled}
             foldingEnabled={foldingEnabled}
+            autocompleteEnabled={autocompleteEnabled}
+            errorHighlightingEnabled={errorHighlightingEnabled}
             onCursorPositionChange={onCursorPositionChange}
             onCursorChange={onCursorChange}
             onSave={onSave}

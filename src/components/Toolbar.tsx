@@ -21,6 +21,10 @@ interface ToolbarProps {
   onLightThemeEnabledChange(enabled: boolean): void
   foldingEnabled: boolean
   onFoldingEnabledChange(enabled: boolean): void
+  autocompleteEnabled: boolean
+  onAutocompleteEnabledChange(enabled: boolean): void
+  errorHighlightingEnabled: boolean
+  onErrorHighlightingEnabledChange(enabled: boolean): void
 }
 
 export function Toolbar({
@@ -41,6 +45,10 @@ export function Toolbar({
   onLightThemeEnabledChange,
   foldingEnabled,
   onFoldingEnabledChange,
+  autocompleteEnabled,
+  onAutocompleteEnabledChange,
+  errorHighlightingEnabled,
+  onErrorHighlightingEnabledChange,
 }: ToolbarProps) {
   const documentTitle = document
     ? [document.repoName, document.fileName].filter(Boolean).join(' / ')
@@ -101,6 +109,10 @@ export function Toolbar({
           onLightThemeEnabledChange={onLightThemeEnabledChange}
           foldingEnabled={foldingEnabled}
           onFoldingEnabledChange={onFoldingEnabledChange}
+          autocompleteEnabled={autocompleteEnabled}
+          onAutocompleteEnabledChange={onAutocompleteEnabledChange}
+          errorHighlightingEnabled={errorHighlightingEnabled}
+          onErrorHighlightingEnabledChange={onErrorHighlightingEnabledChange}
         />
       </div>
     </header>
