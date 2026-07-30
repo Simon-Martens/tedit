@@ -10,6 +10,7 @@ const defaultSettings = {
   foldingEnabled: true,
   autocompleteEnabled: true,
   errorHighlightingEnabled: true,
+  automaticErrorPopupEnabled: true,
 }
 
 function createSettingsPersistence({ app, handleIpc }) {

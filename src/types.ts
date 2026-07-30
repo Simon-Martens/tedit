@@ -134,6 +134,7 @@ export interface AppSettings {
   foldingEnabled: boolean
   autocompleteEnabled: boolean
   errorHighlightingEnabled: boolean
+  automaticErrorPopupEnabled: boolean
 }
 
 export interface DesktopSession {
@@ -248,7 +249,8 @@ export interface DesktopApi {
   onLanguageServerStatus(listener: (status: LanguageServerStatus) => void): () => void
   onLanguageServerDiagnostics(listener: (update: {
     documentId: string
-    version: number
+    sourceVersion: number
+    clientVersion: number
     diagnostics: LanguageServerDiagnostic[]
   }) => void): () => void
   onLanguageServerDependencyChange(listener: (update: { documentId: string }) => void): () => void
@@ -323,6 +325,8 @@ export interface EditorDocument {
   messages: string[]
   diagnostics: EditorDiagnostic[]
   languageServerDiagnostics?: EditorDiagnostic[]
+  languageServerDiagnosticsSourceVersion?: number
+  languageServerDiagnosticsClientVersion?: number
   pdfUrl?: string
   compiledAt?: string
   compileDurationMs?: number

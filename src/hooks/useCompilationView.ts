@@ -1,7 +1,7 @@
 import { useLayoutEffect, useState } from 'react'
 import type { EditorDocument } from '../types'
 
-export function useCompilationView(activeDocument?: EditorDocument) {
+export function useCompilationView(activeDocument: EditorDocument | undefined, automaticErrorPopupEnabled: boolean) {
   const [compilationView, setCompilationView] = useState<{
     documentId: string
     mode: 'closed' | 'manual' | 'error'
@@ -11,19 +11,20 @@ export function useCompilationView(activeDocument?: EditorDocument) {
     && activeDocument.attemptedDependencyRevision === activeDocument.dependencyRevision
   const mode = compilationView.documentId === activeDocument?.id
     ? compilationView.mode
-    : hasCurrentError ? 'error' : 'closed'
+    : hasCurrentError && automaticErrorPopupEnabled ? 'error' : 'closed'
   const open = mode !== 'closed'
 
   useLayoutEffect(() => {
     const documentId = activeDocument?.id ?? ''
     setCompilationView((current) => {
       let nextMode = current.documentId === documentId ? current.mode : 'closed'
-      if (hasCurrentError) nextMode = 'error'
+      if (hasCurrentError && automaticErrorPopupEnabled) nextMode = 'error'
+      else if (!automaticErrorPopupEnabled && nextMode === 'error') nextMode = 'closed'
       else if (!activeDocument || (activeDocument.compileState === 'success' && nextMode === 'error')) nextMode = 'closed'
       if (current.documentId === documentId && current.mode === nextMode) return current
       return { documentId, mode: nextMode }
     })
-  }, [activeDocument?.id, activeDocument?.compileState, hasCurrentError])
+  }, [activeDocument?.id, activeDocument?.compileState, automaticErrorPopupEnabled, hasCurrentError])
 
   return {
     mode,

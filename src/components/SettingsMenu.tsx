@@ -16,6 +16,8 @@ export function SettingsMenu({
   onAutocompleteEnabledChange,
   errorHighlightingEnabled,
   onErrorHighlightingEnabledChange,
+  automaticErrorPopupEnabled,
+  onAutomaticErrorPopupEnabledChange,
 }: {
   vimEnabled: boolean
   onVimEnabledChange(enabled: boolean): void
@@ -31,6 +33,8 @@ export function SettingsMenu({
   onAutocompleteEnabledChange(enabled: boolean): void
   errorHighlightingEnabled: boolean
   onErrorHighlightingEnabledChange(enabled: boolean): void
+  automaticErrorPopupEnabled: boolean
+  onAutomaticErrorPopupEnabledChange(enabled: boolean): void
 }) {
   const [open, setOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -119,6 +123,17 @@ export function SettingsMenu({
               type="checkbox"
               checked={errorHighlightingEnabled}
               onChange={(event) => onErrorHighlightingEnabledChange(event.target.checked)}
+            />
+          </label>
+          <label className="setting-row">
+            <span>
+              <strong>Auto Error Popup</strong>
+              <small>Open compilation output when errors occur</small>
+            </span>
+            <input
+              type="checkbox"
+              checked={automaticErrorPopupEnabled}
+              onChange={(event) => onAutomaticErrorPopupEnabledChange(event.target.checked)}
             />
           </label>
           <label className="setting-row">

@@ -132,19 +132,33 @@ class TinymistLspService {
       connection.onRequest('workspace/applyEdit', () => ({ applied: false }))
       connection.onNotification('textDocument/publishDiagnostics', (params) => {
         if (generation !== this.generation || params.uri !== this.activeUri) return
-        const diagnosticVersion = params.version ?? this.openDocuments.get(this.activeUri)?.version
-        clearTimeout(this.diagnosticsTimer)
-        this.diagnosticsTimer = setTimeout(() => {
+        const activeDocument = this.openDocuments.get(this.activeUri)
+        const diagnosticVersion = params.version ?? activeDocument?.version
+        if (!activeDocument || diagnosticVersion !== activeDocument.version) return
+        const sourceVersion = activeDocument.sourceVersion ?? activeDocument.version
+        const clientVersion = activeDocument.clientVersion ?? activeDocument.version
+        const emitDiagnostics = () => {
+          const currentDocument = this.openDocuments.get(this.activeUri)
           if (
             generation !== this.generation
-            || diagnosticVersion !== this.openDocuments.get(this.activeUri)?.version
+            || diagnosticVersion !== currentDocument?.version
+            || sourceVersion !== (currentDocument.sourceVersion ?? currentDocument.version)
+            || clientVersion !== (currentDocument.clientVersion ?? currentDocument.version)
           ) return
           this.sendEvent('tinymist-lsp:diagnostics', {
             documentId,
-            version: this.activeVersion,
+            sourceVersion,
+            clientVersion,
             diagnostics: params.diagnostics,
           })
-        }, 60)
+        }
+        clearTimeout(this.diagnosticsTimer)
+        if (!params.diagnostics.length) {
+          this.diagnosticsTimer = undefined
+          emitDiagnostics()
+        } else {
+          this.diagnosticsTimer = setTimeout(emitDiagnostics, 60)
+        }
       })
       connection.listen()
 
@@ -186,6 +200,7 @@ class TinymistLspService {
         source: this.source,
         version: this.version,
         sourceVersion: this.activeVersion,
+        clientVersion: this.version,
       })
       const orderedDocuments = [
         ...[...documents.values()].filter((document) => document.filePath !== this.filePath),
@@ -295,7 +310,12 @@ class TinymistLspService {
       const version = current && document.version <= current.version
         ? current.source === document.source ? current.version : current.version + 1
         : document.version
-      return [uri, { ...document, filePath, version }]
+      return [uri, {
+        ...document,
+        filePath,
+        version,
+        clientVersion: document.clientVersion ?? document.version,
+      }]
     }))
     const requestedRoot = nextDocuments.get(this.uri)
     if (requestedRoot) {
@@ -310,6 +330,7 @@ class TinymistLspService {
         source: this.source,
         version: this.version,
         sourceVersion: this.activeVersion,
+        clientVersion: this.version,
       })
     }
 
@@ -379,6 +400,7 @@ class TinymistLspService {
       source,
       version: currentActiveDocument?.version ?? sourceVersion,
       sourceVersion,
+      clientVersion: currentActiveDocument?.clientVersion ?? sourceVersion,
     }]
     await this.syncDocuments({ documentId, openDocuments: completionDocuments })
     if (
@@ -447,6 +469,7 @@ class TinymistLspService {
         source,
         version,
         sourceVersion: version,
+        clientVersion: version,
       }]
       : openDocuments
     await this.syncDocumentsNow({ documentId, openDocuments: compileDocuments }, false)

@@ -28,7 +28,7 @@ function App() {
   const [cursorPosition, setCursorPosition] = useState({ line: 1, column: 1 })
   const [docsOpen, setDocsOpen] = useState(false)
   const [docsMounted, setDocsMounted] = useState(false)
-  const compilation = useCompilationView(editor.activeDocument)
+  const compilation = useCompilationView(editor.activeDocument, settings.automaticErrorPopupEnabled)
   const languageServer = useTinymistLanguageServer(
     editor.activeDocument,
     editor.documents,
@@ -111,6 +111,8 @@ function App() {
         onAutocompleteEnabledChange={settings.changeAutocompleteEnabled}
         errorHighlightingEnabled={settings.errorHighlightingEnabled}
         onErrorHighlightingEnabledChange={settings.changeErrorHighlightingEnabled}
+        automaticErrorPopupEnabled={settings.automaticErrorPopupEnabled}
+        onAutomaticErrorPopupEnabledChange={settings.changeAutomaticErrorPopupEnabled}
       />
       <TabBar
         documents={editor.documents}

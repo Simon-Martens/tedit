@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import Editor, { type OnMount } from '@monaco-editor/react'
 import type { editor as MonacoEditor, languages as MonacoLanguages, Position } from 'monaco-editor'
 import { initVimMode, VimMode, type VimAdapterInstance } from 'monaco-vim'
@@ -146,7 +146,11 @@ export function SourcePane({
   const foldingEnabledRef = useRef(foldingEnabled)
   const autocompleteEnabledRef = useRef(autocompleteEnabled)
   const errorHighlightingEnabledRef = useRef(errorHighlightingEnabled)
-  const diagnostics = document.languageServerDiagnostics ?? document.diagnostics
+  const languageServerDiagnosticsCurrent = document.languageServerDiagnosticsSourceVersion === document.sourceRevision
+    && document.languageServerDiagnosticsClientVersion === document.sourceRevision + document.dependencyRevision
+  const diagnostics = languageServerDiagnosticsCurrent
+    ? document.languageServerDiagnostics ?? []
+    : document.diagnostics
   const diagnosticsRef = useRef(diagnostics)
   const cursorCallbackRef = useRef(onCursorPositionChange)
   const cursorPositionCallbackRef = useRef(onCursorChange)
@@ -268,8 +272,29 @@ export function SourcePane({
     }))
   }
 
-  useEffect(() => {
-    const frame = requestAnimationFrame(() => editorRef.current?.layout())
+  useLayoutEffect(() => {
+    const editor = editorRef.current
+    const position = editor?.getPosition()
+    if (!editor) return
+    if (!position) {
+      const frame = requestAnimationFrame(() => editor.layout())
+      return () => cancelAnimationFrame(frame)
+    }
+    const oldHeight = editor.getLayoutInfo().height
+    const lineHeight = monacoRef.current
+      ? editor.getOption(monacoRef.current.editor.EditorOption.lineHeight)
+      : 22
+    const oldCursorTop = editor.getTopForPosition(position.lineNumber, position.column)
+    const oldScrollTop = editor.getScrollTop()
+    const oldUsableHeight = Math.max(1, oldHeight - lineHeight)
+    const relativeCursorTop = Math.min(1, Math.max(0, (oldCursorTop - oldScrollTop) / oldUsableHeight))
+    const frame = requestAnimationFrame(() => {
+      editor.layout()
+      const newHeight = editor.getLayoutInfo().height
+      const newCursorTop = editor.getTopForPosition(position.lineNumber, position.column)
+      const targetCursorTop = relativeCursorTop * Math.max(0, newHeight - lineHeight)
+      editor.setScrollTop(newCursorTop - targetCursorTop)
+    })
     return () => cancelAnimationFrame(frame)
   }, [layoutVersion])
 
@@ -301,7 +326,7 @@ export function SourcePane({
 
   useEffect(() => {
     applyDiagnostics()
-  }, [diagnostics, errorHighlightingEnabled])
+  }, [diagnostics, document.sourceRevision, document.dependencyRevision, errorHighlightingEnabled])
 
   useEffect(() => {
     editorRef.current?.updateOptions({

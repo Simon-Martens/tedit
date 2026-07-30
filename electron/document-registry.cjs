@@ -49,6 +49,7 @@ function createDocumentRegistry() {
         source: document.source,
         version: document.version,
         sourceVersion: document.sourceVersion,
+        clientVersion: document.version,
       }]
     })
   }

@@ -68,12 +68,18 @@ export function useEditorDocuments(): EditorDocumentsController {
   }
 
   const changeSource = (document: EditorDocument, source: string) => {
-    if (source === document.source) return
-    updateDocument(document.id, {
-      source,
-      sourceRevision: document.sourceRevision + 1,
-      isDirty: true,
-    })
+    setDocuments((current) => current.map((entry) => {
+      if (entry.id !== document.id || source === entry.source) return entry
+      return {
+        ...entry,
+        source,
+        sourceRevision: entry.sourceRevision + 1,
+        isDirty: true,
+        languageServerDiagnostics: undefined,
+        languageServerDiagnosticsSourceVersion: undefined,
+        languageServerDiagnosticsClientVersion: undefined,
+      }
+    }))
   }
 
   const changePreviewRoot = (document: EditorDocument, filePath: string) => {

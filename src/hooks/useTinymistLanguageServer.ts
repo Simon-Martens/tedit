@@ -48,19 +48,31 @@ export function useTinymistLanguageServer(
     const desktop = window.typstDesktop
     if (!desktop || !document) {
       setStatus({ ...DISABLED_STATUS, documentId: document?.id ?? '' })
-      if (document) updateRef.current(document.id, { languageServerDiagnostics: undefined })
+      if (document) updateRef.current(document.id, {
+        languageServerDiagnostics: undefined,
+        languageServerDiagnosticsSourceVersion: undefined,
+        languageServerDiagnosticsClientVersion: undefined,
+      })
       return
     }
 
     const documentId = document.id
-    updateRef.current(documentId, { languageServerDiagnostics: undefined })
+    updateRef.current(documentId, {
+      languageServerDiagnostics: undefined,
+      languageServerDiagnosticsSourceVersion: undefined,
+      languageServerDiagnosticsClientVersion: undefined,
+    })
     setStatus({ documentId, state: 'starting', message: 'Starting Tinymist language server...' })
     const removeStatusListener = desktop.onLanguageServerStatus((nextStatus) => {
       if (nextStatus.documentId !== documentId) return
       setStatus(nextStatus)
       if (nextStatus.state === 'error') {
         failedRevisionRef.current = documentRef.current?.sourceRevision
-        updateRef.current(documentId, { languageServerDiagnostics: undefined })
+        updateRef.current(documentId, {
+          languageServerDiagnostics: undefined,
+          languageServerDiagnosticsSourceVersion: undefined,
+          languageServerDiagnosticsClientVersion: undefined,
+        })
       } else if (nextStatus.state === 'ready') {
         failedRevisionRef.current = undefined
         const current = documentRef.current
@@ -76,10 +88,13 @@ export function useTinymistLanguageServer(
       if (
         update.documentId !== documentId
         || current?.id !== documentId
-        || update.version !== current.sourceRevision
+        || update.sourceVersion !== current.sourceRevision
+        || update.clientVersion !== current.sourceRevision + current.dependencyRevision
       ) return
       updateRef.current(documentId, {
         languageServerDiagnostics: update.diagnostics.map(toEditorDiagnostic),
+        languageServerDiagnosticsSourceVersion: update.sourceVersion,
+        languageServerDiagnosticsClientVersion: update.clientVersion,
       })
     })
     const removeDependencyListener = desktop.onLanguageServerDependencyChange((update) => {
@@ -126,7 +141,11 @@ export function useTinymistLanguageServer(
       window.clearTimeout(dependencyRestartTimerRef.current)
       dependencyRestartTimerRef.current = undefined
       desktop.stopLanguageServer()
-      updateRef.current(documentId, { languageServerDiagnostics: undefined })
+      updateRef.current(documentId, {
+        languageServerDiagnostics: undefined,
+        languageServerDiagnosticsSourceVersion: undefined,
+        languageServerDiagnosticsClientVersion: undefined,
+      })
     }
   }, [document?.id, document?.filePath, document?.previewRootPath, retryGeneration])
 

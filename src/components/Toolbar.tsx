@@ -25,6 +25,8 @@ interface ToolbarProps {
   onAutocompleteEnabledChange(enabled: boolean): void
   errorHighlightingEnabled: boolean
   onErrorHighlightingEnabledChange(enabled: boolean): void
+  automaticErrorPopupEnabled: boolean
+  onAutomaticErrorPopupEnabledChange(enabled: boolean): void
 }
 
 export function Toolbar({
@@ -49,6 +51,8 @@ export function Toolbar({
   onAutocompleteEnabledChange,
   errorHighlightingEnabled,
   onErrorHighlightingEnabledChange,
+  automaticErrorPopupEnabled,
+  onAutomaticErrorPopupEnabledChange,
 }: ToolbarProps) {
   const documentTitle = document
     ? [document.repoName, document.fileName].filter(Boolean).join(' / ')
@@ -113,6 +117,8 @@ export function Toolbar({
           onAutocompleteEnabledChange={onAutocompleteEnabledChange}
           errorHighlightingEnabled={errorHighlightingEnabled}
           onErrorHighlightingEnabledChange={onErrorHighlightingEnabledChange}
+          automaticErrorPopupEnabled={automaticErrorPopupEnabled}
+          onAutomaticErrorPopupEnabledChange={onAutomaticErrorPopupEnabledChange}
         />
       </div>
     </header>

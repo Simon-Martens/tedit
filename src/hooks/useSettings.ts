@@ -29,6 +29,9 @@ export function useSettings() {
   const [errorHighlightingEnabled, setErrorHighlightingEnabled] = useState(() => (
     window.typstDesktop ? true : browserSetting('tedit.error-highlighting', true)
   ))
+  const [automaticErrorPopupEnabled, setAutomaticErrorPopupEnabled] = useState(() => (
+    window.typstDesktop ? true : browserSetting('tedit.automatic-error-popup', true)
+  ))
 
   useEffect(() => {
     if (!window.typstDesktop) localStorage.setItem('tedit.vim-mode', String(vimEnabled))
@@ -59,6 +62,10 @@ export function useSettings() {
   }, [errorHighlightingEnabled])
 
   useEffect(() => {
+    if (!window.typstDesktop) localStorage.setItem('tedit.automatic-error-popup', String(automaticErrorPopupEnabled))
+  }, [automaticErrorPopupEnabled])
+
+  useEffect(() => {
     window.typstDesktop?.getSettings().then((settings) => {
       setVimEnabled(settings.vimEnabled)
       setShowPreviewPosition(settings.showPreviewPosition)
@@ -67,6 +74,7 @@ export function useSettings() {
       setFoldingEnabled(settings.foldingEnabled)
       setAutocompleteEnabled(settings.autocompleteEnabled)
       setErrorHighlightingEnabled(settings.errorHighlightingEnabled)
+      setAutomaticErrorPopupEnabled(settings.automaticErrorPopupEnabled)
     }).catch((error) => reportError('settings-load', error))
   }, [])
 
@@ -87,6 +95,7 @@ export function useSettings() {
     foldingEnabled,
     autocompleteEnabled,
     errorHighlightingEnabled,
+    automaticErrorPopupEnabled,
     changeVimEnabled: (value: boolean) => changeSetting('vimEnabled', value, setVimEnabled),
     changeShowPreviewPosition: (value: boolean) => changeSetting('showPreviewPosition', value, setShowPreviewPosition),
     changeAutoScrollEnabled: (value: boolean) => changeSetting('autoScrollEnabled', value, setAutoScrollEnabled),
@@ -94,5 +103,6 @@ export function useSettings() {
     changeFoldingEnabled: (value: boolean) => changeSetting('foldingEnabled', value, setFoldingEnabled),
     changeAutocompleteEnabled: (value: boolean) => changeSetting('autocompleteEnabled', value, setAutocompleteEnabled),
     changeErrorHighlightingEnabled: (value: boolean) => changeSetting('errorHighlightingEnabled', value, setErrorHighlightingEnabled),
+    changeAutomaticErrorPopupEnabled: (value: boolean) => changeSetting('automaticErrorPopupEnabled', value, setAutomaticErrorPopupEnabled),
   }
 }
