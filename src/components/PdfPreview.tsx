@@ -194,6 +194,7 @@ export function PdfPreview({
   sourceCursorLocation,
   showPreviewPosition,
   autoScrollEnabled,
+  headingLabel = 'PDF Preview',
 }: {
   document: EditorDocument
   previewRoots?: PreviewRoot[]
@@ -202,6 +203,7 @@ export function PdfPreview({
   sourceCursorLocation?: SourceCursorLocation
   showPreviewPosition: boolean
   autoScrollEnabled: boolean
+  headingLabel?: string
 }) {
   const [pdf, setPdf] = useState<PDFDocumentProxy>()
   const [loadedPdfUrl, setLoadedPdfUrl] = useState<string>()
@@ -387,10 +389,14 @@ export function PdfPreview({
         }
       }
 
-      const pdfPages = await Promise.all(
-        Array.from({ length: pdf.numPages }, (_, index) => pdf.getPage(index + 1)),
-      )
-      if (version !== renderVersionRef.current) return
+      const pdfPages: PDFPageProxy[] = []
+      for (let start = 1; start <= pdf.numPages; start += 8) {
+        const pageCount = Math.min(8, pdf.numPages - start + 1)
+        pdfPages.push(...await Promise.all(
+          Array.from({ length: pageCount }, (_, index) => pdf.getPage(start + index)),
+        ))
+        if (version !== renderVersionRef.current) return
+      }
 
       for (let index = 1; index <= pdf.numPages; index += 1) {
         const page = pdfPages[index - 1]
@@ -820,7 +826,7 @@ export function PdfPreview({
     <section className="preview-panel" aria-label="PDF preview">
       <div className="panel-heading preview-heading">
         <span className="preview-title">
-          <span className="preview-label">PDF Preview</span>
+          <span className="preview-label">{headingLabel}</span>
           {previewRoots?.length === 1 && (
             <span className="preview-root-name" title={previewRoots[0].filePath}>
               {splitPreviewPath(previewRoots[0].relativePath).directory && (

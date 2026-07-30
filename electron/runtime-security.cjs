@@ -6,7 +6,7 @@ const { logFailure } = require('./logging.cjs')
 function registerDocumentationScheme(protocol) {
   protocol.registerSchemesAsPrivileged([{
     scheme: 'tedit-docs',
-    privileges: { standard: true, secure: true, supportFetchAPI: true },
+    privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true },
   }])
 }
 
@@ -72,6 +72,14 @@ function configurePermissions({ appEntryUrl, isDevelopment, session, trustedWebC
 
   const appSession = session.defaultSession
   appSession.webRequest.onErrorOccurred((details) => {
+    if (isDevelopment) {
+      if (details.error === 'net::ERR_CACHE_MISS' && details.resourceType === 'font') return
+      if (details.error === 'net::ERR_ABORTED') {
+        try {
+          if (new URL(details.url).origin === new URL(appEntryUrl).origin) return
+        } catch {}
+      }
+    }
     if (trustedWebContentsIds.has(details.webContentsId)) {
       logFailure('network', new Error(details.error), {
         method: details.method,

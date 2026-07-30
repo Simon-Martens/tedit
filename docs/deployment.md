@@ -18,7 +18,7 @@ The installers include:
 - the renderer and Electron main process
 - Tinymist `0.15.2`
 - the Apache license distributed with Tinymist
-- offline documentation for Typst `0.15.0`
+- offline web and print documentation for Typst `0.15.0`
 
 The macOS and Windows installers are currently unsigned. Users may therefore
 see operating-system security warnings. The workflow explicitly disables
@@ -198,7 +198,8 @@ At minimum, verify:
 - source-position markers and auto-scroll work beyond page one
 - PDF text is selectable and copyable
 - zoom, rotation, download, and print still work
-- offline documentation opens, navigates, searches, and restores its position
+- offline web documentation opens, navigates, searches, and restores its position
+- offline print documentation opens in PDF.js and switches back to the web version
 - dark/light themes and editor settings persist
 - tabs activate, close, reorder, and report unsaved state correctly
 - compilation failures show only the useful inner diagnostic
@@ -243,8 +244,8 @@ node -p "require('./resources/typst-docs/manifest.json')"
 ```
 
 Confirm that `typstVersion` matches the version embedded in Tinymist. The
-generated site must contain `site/index.html`, `site/assets/search.json`, and
-the Typst license files.
+generated site must contain `site/index.html`, `site/assets/search.json`,
+`site/print/docs.pdf`, and the Typst license files.
 
 ## 7. Build a Local Installer
 

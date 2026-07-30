@@ -153,6 +153,38 @@ a:focus-visible {
   background: #203330;
 }
 
+.docs-view-actions,
+.docs-format-switch {
+  display: flex;
+  align-items: center;
+}
+
+.docs-view-actions {
+  gap: 14px;
+}
+
+.docs-format-switch {
+  padding: 2px;
+  border: 1px solid #36504c;
+  border-radius: 4px;
+  background: #101d1b;
+}
+
+.docs-view-header .docs-format-button {
+  width: auto;
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 2px;
+  font: 9px/1 var(--font-mono);
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.docs-view-header .docs-format-button.active {
+  color: #eafafa;
+  background: #28514e;
+}
+
 .docs-view-header svg {
   width: 13px;
   fill: none;
@@ -167,6 +199,16 @@ a:focus-visible {
   height: 100%;
   border: 0;
   background: #fff;
+}
+
+.docs-view .docs-content-hidden {
+  display: none;
+}
+
+.docs-print-view {
+  display: grid;
+  min-width: 0;
+  min-height: 0;
 }
 
 .theme-light .docs-view-header {
@@ -192,6 +234,16 @@ a:focus-visible {
 .theme-light .docs-view-header button:hover {
   color: #242722;
   background: #e8ece1;
+}
+
+.theme-light .docs-format-switch {
+  border-color: #c3ccc0;
+  background: #e7ebe1;
+}
+
+.theme-light .docs-view-header .docs-format-button.active {
+  color: #244d4d;
+  background: #cce1dc;
 }
 
 .app-footer {

@@ -12,6 +12,7 @@ const sourceRoot = path.resolve(
   process.argv[2] ?? process.env.TYPST_SOURCE_DIR ?? '../typst',
 )
 const generatedSite = path.join(sourceRoot, 'docs', 'dist', 'site')
+const generatedPdf = path.join(sourceRoot, 'docs', 'dist', 'docs.pdf')
 const resourcesRoot = path.join(projectRoot, 'resources')
 const outputRoot = path.join(resourcesRoot, 'typst-docs')
 const temporaryRoot = `${outputRoot}.tmp`
@@ -178,9 +179,11 @@ if (typstVersion !== TINYMIST_TYPST_VERSION) {
 }
 
 await run('cargo', ['docit', 'compile'], sourceRoot)
+await run('cargo', ['docit', 'compile', '--format', 'pdf'], sourceRoot)
 await Promise.all([
   access(path.join(generatedSite, 'index.html')),
   access(path.join(generatedSite, 'assets', 'search.json')),
+  access(generatedPdf),
 ])
 
 const [commit, description] = await Promise.all([
@@ -202,9 +205,15 @@ await Promise.all([
     commit,
     description,
     typstVersion,
+    formats: {
+      web: 'site/index.html',
+      print: 'site/print/docs.pdf',
+    },
     packagedBy: `tedit ${packageVersion}`,
   }, null, 2)}\n`),
 ])
+await mkdir(path.join(temporaryRoot, 'site', 'print'), { recursive: true })
+await cp(generatedPdf, path.join(temporaryRoot, 'site', 'print', 'docs.pdf'))
 await writeFile(path.join(temporaryRoot, 'site', 'assets', 'tedit-scrollbars.css'), scrollbarStyles)
 await writeFile(path.join(temporaryRoot, 'site', 'assets', 'tedit-state.js'), documentationStateScript)
 await injectScrollbarStyles(path.join(temporaryRoot, 'site'))
