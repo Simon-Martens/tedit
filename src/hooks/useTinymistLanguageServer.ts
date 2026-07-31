@@ -59,6 +59,7 @@ export function useTinymistLanguageServer(
     }
 
     const documentId = document.id
+    let cancelled = false
     setStatus({ documentId, state: 'starting', message: 'Starting Tinymist language server...' })
     const removeStatusListener = desktop.onLanguageServerStatus((nextStatus) => {
       if (nextStatus.documentId !== documentId) return
@@ -117,6 +118,8 @@ export function useTinymistLanguageServer(
       sourceVersion: document.sourceRevision,
       openDocuments,
     }).catch((error) => {
+      if (cancelled) return
+      failedRevisionRef.current = documentRef.current?.sourceRevision
       setStatus({
         documentId,
         state: 'error',
@@ -125,6 +128,7 @@ export function useTinymistLanguageServer(
     })
 
     return () => {
+      cancelled = true
       removeStatusListener()
       removeDiagnosticsListener()
       removeDependencyListener()
