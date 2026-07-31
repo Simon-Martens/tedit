@@ -4,12 +4,12 @@
   <img src="build/icon.svg" width="96" height="96" alt="tedit logo">
 </p>
 
-![tedit editing a Typst document with a synchronized PDF preview](docs/screenshot.png)
+![tedit editing a Typst document with a synchronized preview](docs/screenshot.png)
 
 A focused desktop editor for [Typst](https://typst.app/) with Monaco editing,
-Tinymist diagnostics, live PDF output, and bundled offline documentation.
+Tinymist diagnostics, an incremental live preview, and bundled offline documentation.
 
-*This App is 100% vibe coded for my own personal/business purposes. It just puts together already existing pieces: electron, typst, tinymist, the monaco editor &amp; pdf.js. Even though there are Installers and distributions for multiple OS, it is still intended to be for my personal use only, which means no support or guarantees are given.*
+*This App is 100% vibe coded for my own personal/business purposes. It just puts together already existing pieces: electron, typst, tinymist, and the Monaco editor. Even though there are Installers and distributions for multiple OS, it is still intended to be for my personal use only, which means no support or guarantees are given.*
 
 ## Features
 
@@ -17,9 +17,10 @@ Tinymist diagnostics, live PDF output, and bundled offline documentation.
   Undo/Redo, and optional Vim bindings
 - native Tinymist backend for in-memory PDF compilation and language-server
   diagnostics
-- progressive multi-page PDF.js preview with selectable text, zoom, rotation,
-  printing, and downloads
-- source-to-preview position markers and automatic scrolling for saved files
+- incremental multi-page Tinymist SVG preview with selectable text, zoom, page
+  navigation, printing, and PDF downloads
+- bidirectional source/preview navigation and automatic scrolling, including
+  untitled documents
 - draggable document tabs, session restoration, and repository metadata
 - bundled, searchable Typst documentation that works offline
 - persistent dark/light themes and editor settings
@@ -38,15 +39,15 @@ not notarized. Both platforms may show operating-system security warnings.
 
 ## Architecture
 
-tedit is an Electron and React application. Tinymist is the single native
-Typst backend for compilation and diagnostics. The editor sends unsaved source
-through LSP document updates and requests PDF bytes from the same long-lived
-Tinymist process. PDF.js renders the result and supplies the selectable text
-layer.
+tedit is an Electron and React application. Tinymist is the native Typst
+backend for compilation, diagnostics, and the visible preview. The editor sends
+unsaved source through memory-file updates, and Tinymist streams incremental
+vector updates that are patched into a persistent SVG document. Preview clicks
+are resolved back to Monaco source ranges through Tinymist.
 
-For saved documents, a separate Tinymist preview sidecar maps source positions
-to PDF coordinates. The PDF remains rendered by PDF.js; the sidecar is used
-only for synchronization.
+The long-lived Tinymist LSP process still exports PDF bytes for printing and
+downloads. Untitled documents receive an application-managed temporary path so
+the preview sidecar can synchronize them without requiring an explicit save.
 
 Tinymist is resolved in this order:
 

@@ -7,6 +7,8 @@ interface PdfToolbarProps {
   pageCount: number
   zoom: PdfZoom
   pdfUrl?: string
+  previewReady?: boolean
+  rotationEnabled?: boolean
   fileName: string
   printing: boolean
   onPageChange(page: number): void
@@ -20,6 +22,8 @@ export function PdfToolbar({
   pageCount,
   zoom,
   pdfUrl,
+  previewReady,
+  rotationEnabled = true,
   fileName,
   printing,
   onPageChange,
@@ -28,6 +32,7 @@ export function PdfToolbar({
   onPrint,
 }: PdfToolbarProps) {
   const numericZoom = typeof zoom === 'number' ? zoom : 100
+  const previewAvailable = previewReady ?? Boolean(pdfUrl)
 
   return (
     <div className="pdf-toolbar" aria-label="PDF controls">
@@ -49,22 +54,24 @@ export function PdfToolbar({
         <Icon name="next" />
       </button>
       <span className="pdf-toolbar-separator" />
-      <button type="button" title="Zoom out" disabled={!pdfUrl} onClick={() => onZoomChange(Math.max(25, numericZoom - 10))}>
+      <button type="button" title="Zoom out" disabled={!previewAvailable} onClick={() => onZoomChange(Math.max(25, numericZoom - 10))}>
         <Icon name="zoomOut" />
       </button>
       {typeof zoom === 'number' && <span className="pdf-zoom-value">{zoom}%</span>}
-      <button type="button" title="Zoom in" disabled={!pdfUrl} onClick={() => onZoomChange(Math.min(300, numericZoom + 10))}>
+      <button type="button" title="Zoom in" disabled={!previewAvailable} onClick={() => onZoomChange(Math.min(300, numericZoom + 10))}>
         <Icon name="zoomIn" />
       </button>
-      <button type="button" title="Fit to width" disabled={!pdfUrl} onClick={() => onZoomChange('width')}>
+      <button type="button" title="Fit to width" disabled={!previewAvailable} onClick={() => onZoomChange('width')}>
         <Icon name="fitWidth" />
       </button>
-      <button type="button" title="Fit whole page" disabled={!pdfUrl} onClick={() => onZoomChange('page')}>
+      <button type="button" title="Fit whole page" disabled={!previewAvailable} onClick={() => onZoomChange('page')}>
         <Icon name="fitPage" />
       </button>
-      <button type="button" title="Rotate clockwise" disabled={!pdfUrl} onClick={onRotate}>
-        <Icon name="rotate" />
-      </button>
+      {rotationEnabled && (
+        <button type="button" title="Rotate clockwise" disabled={!previewAvailable} onClick={onRotate}>
+          <Icon name="rotate" />
+        </button>
+      )}
       <span className="pdf-toolbar-separator" />
       <button type="button" title="Print PDF" disabled={!pdfUrl || printing} onClick={onPrint}>
         <Icon name="print" />

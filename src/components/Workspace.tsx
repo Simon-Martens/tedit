@@ -6,11 +6,11 @@ import {
   type KeyboardEvent,
   type PointerEvent,
 } from 'react'
-import type { EditorDocument, LanguageServerDocument, PreviewPosition, PreviewRoot, SourceCursorLocation } from '../types'
+import type { EditorDocument, LanguageServerDocument, PreviewPosition, PreviewRoot, PreviewSourceReveal, SourceCursorLocation, SourceSyncStatus } from '../types'
 import type { BibliographiesController } from '../hooks/useBibliographies'
 import { BibliographyPane } from './BibliographyPane'
 import { CompilationPane } from './CompilationPane'
-import { PdfPreview } from './PdfPreview'
+import { TypstPreview } from './TypstPreview'
 import { SourcePane } from './SourcePane'
 
 function clamp(value: number, minimum: number, maximum: number) {
@@ -24,8 +24,11 @@ export function Workspace({
   onSourceChange,
   vimEnabled,
   previewPositions,
+  previewStatus,
   sourceCursorLocation,
+  sourceReveal,
   onCursorPositionChange,
+  onPreviewPoint,
   onCursorChange,
   showPreviewPosition,
   autoScrollEnabled,
@@ -34,7 +37,6 @@ export function Workspace({
   autocompleteEnabled,
   errorHighlightingEnabled,
   compilationOpen,
-  compilationAutoSized,
   onSave,
   bibliographies,
   languageServerDocuments,
@@ -45,8 +47,11 @@ export function Workspace({
   onSourceChange(value: string): void
   vimEnabled: boolean
   previewPositions: PreviewPosition[]
+  previewStatus: SourceSyncStatus
   sourceCursorLocation?: SourceCursorLocation
+  sourceReveal?: PreviewSourceReveal
   onCursorPositionChange(location: SourceCursorLocation): void
+  onPreviewPoint(position: PreviewPosition): void
   onCursorChange(line: number, column: number): void
   showPreviewPosition: boolean
   autoScrollEnabled: boolean
@@ -55,22 +60,17 @@ export function Workspace({
   autocompleteEnabled: boolean
   errorHighlightingEnabled: boolean
   compilationOpen: boolean
-  compilationAutoSized: boolean
   onSave(): void
   bibliographies: BibliographiesController
   languageServerDocuments: LanguageServerDocument[]
 }) {
   const [leftPanePercent, setLeftPanePercent] = useState(50)
-  const [sourcePanePercent, setSourcePanePercent] = useState(67)
   const [sourceEditorPercent, setSourceEditorPercent] = useState(62)
   const [bibliographyMaximized, setBibliographyMaximized] = useState(false)
   const workspaceRef = useRef<HTMLElement>(null)
-  const leftPaneRef = useRef<HTMLElement>(null)
   const editorStackRef = useRef<HTMLDivElement>(null)
   const layoutVersion = leftPanePercent
-    + sourcePanePercent
     + sourceEditorPercent
-    + (compilationOpen ? 1000 : 0)
     + (bibliographyMaximized ? 2000 : 0)
 
   useEffect(() => {
@@ -84,13 +84,6 @@ export function Workspace({
     setLeftPanePercent(clamp(((event.clientX - bounds.left) / bounds.width) * 100, 25, 75))
   }
 
-  const resizeRows = (event: PointerEvent<HTMLDivElement>) => {
-    if (!event.currentTarget.hasPointerCapture(event.pointerId)) return
-    const bounds = leftPaneRef.current?.getBoundingClientRect()
-    if (!bounds) return
-    setSourcePanePercent(clamp(((event.clientY - bounds.top) / bounds.height) * 100, 35, 80))
-  }
-
   const resizeEditorRows = (event: PointerEvent<HTMLDivElement>) => {
     if (!event.currentTarget.hasPointerCapture(event.pointerId)) return
     const bounds = editorStackRef.current?.getBoundingClientRect()
@@ -98,17 +91,11 @@ export function Workspace({
     setSourceEditorPercent(clamp(((event.clientY - bounds.top) / bounds.height) * 100, 30, 75))
   }
 
-  const resizeWithKeyboard = (event: KeyboardEvent<HTMLDivElement>, axis: 'columns' | 'rows') => {
-    const decreaseKey = axis === 'columns' ? 'ArrowLeft' : 'ArrowUp'
-    const increaseKey = axis === 'columns' ? 'ArrowRight' : 'ArrowDown'
-    if (event.key !== decreaseKey && event.key !== increaseKey) return
+  const resizeColumnsWithKeyboard = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
     event.preventDefault()
-    const change = event.key === increaseKey ? 2 : -2
-    if (axis === 'columns') {
-      setLeftPanePercent((current) => clamp(current + change, 25, 75))
-    } else {
-      setSourcePanePercent((current) => clamp(current + change, 35, 80))
-    }
+    const change = event.key === 'ArrowRight' ? 2 : -2
+    setLeftPanePercent((current) => clamp(current + change, 25, 75))
   }
 
   const resizeEditorWithKeyboard = (event: KeyboardEvent<HTMLDivElement>) => {
@@ -123,16 +110,7 @@ export function Workspace({
       ref={workspaceRef}
       style={{ '--left-pane-size': `${leftPanePercent}%` } as CSSProperties}
     >
-      <section
-        aria-label="Editor and compilation output"
-        ref={leftPaneRef}
-        className={`left-pane ${compilationOpen
-          ? compilationAutoSized ? 'output-error' : 'output-expanded'
-          : 'output-hidden'}`}
-        style={{
-          '--source-pane-size': `${sourcePanePercent}%`,
-        } as CSSProperties}
-      >
+      <section aria-label="Editor" className="left-pane">
         <div
           ref={editorStackRef}
           className={`editor-stack${bibliographies.open ? ' bibliography-open' : ''}${bibliographyMaximized ? ' bibliography-maximized' : ''}`}
@@ -148,6 +126,7 @@ export function Workspace({
             autocompleteEnabled={autocompleteEnabled}
             errorHighlightingEnabled={errorHighlightingEnabled}
             onCursorPositionChange={onCursorPositionChange}
+            sourceReveal={sourceReveal}
             onCursorChange={onCursorChange}
             onSave={onSave}
             bibliographies={bibliographies.files}
@@ -195,58 +174,40 @@ export function Workspace({
             </>
           )}
         </div>
-        {compilationOpen && (
-          <>
-            {compilationAutoSized ? (
-              <div className="output-auto-divider" />
-            ) : (
-              <div
-                className="pane-resizer row-resizer"
-                role="separator"
-                aria-label="Resize source and compilation panes"
-                aria-orientation="horizontal"
-                aria-valuemin={35}
-                aria-valuemax={80}
-                aria-valuenow={Math.round(sourcePanePercent)}
-                tabIndex={0}
-                onKeyDown={(event) => resizeWithKeyboard(event, 'rows')}
-                onPointerDown={(event) => {
-                  event.preventDefault()
-                  event.currentTarget.setPointerCapture(event.pointerId)
-                }}
-                onPointerMove={resizeRows}
-              />
-            )}
-            <CompilationPane document={document} />
-          </>
-        )}
       </section>
       <div
         className="pane-resizer column-resizer"
         role="separator"
-        aria-label="Resize editor and PDF preview panes"
+        aria-label="Resize editor and Typst preview panes"
         aria-orientation="vertical"
         aria-valuemin={25}
         aria-valuemax={75}
         aria-valuenow={Math.round(leftPanePercent)}
         tabIndex={0}
-        onKeyDown={(event) => resizeWithKeyboard(event, 'columns')}
+        onKeyDown={resizeColumnsWithKeyboard}
         onPointerDown={(event) => {
           event.preventDefault()
           event.currentTarget.setPointerCapture(event.pointerId)
         }}
         onPointerMove={resizeColumns}
       />
-      <PdfPreview
-        document={document}
-        previewRoots={previewRoots}
-        onPreviewRootChange={onPreviewRootChange}
-        positions={previewPositions}
-        sourceCursorLocation={sourceCursorLocation}
-        showPreviewPosition={showPreviewPosition}
-        autoScrollEnabled={autoScrollEnabled}
-        key={document.id}
-      />
+      <section
+        aria-label="Typst preview and compilation output"
+        className={`right-pane ${compilationOpen ? 'output-open' : 'output-hidden'}`}
+      >
+        <TypstPreview
+          document={document}
+          previewRoots={previewRoots}
+          onPreviewRootChange={onPreviewRootChange}
+          positions={previewPositions}
+          status={previewStatus}
+          showPreviewPosition={showPreviewPosition}
+          autoScrollEnabled={autoScrollEnabled}
+          onPreviewPoint={onPreviewPoint}
+          key={`${document.id}:${document.previewRootPath ?? document.filePath ?? ''}`}
+        />
+        {compilationOpen && <CompilationPane document={document} />}
+      </section>
     </section>
   )
 }

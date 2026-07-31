@@ -7,6 +7,7 @@ const { createDocumentRegistry } = require('./document-registry.cjs')
 const { createDocumentWatcher, registerDocumentWatchIpc } = require('./document-watching.cjs')
 const { createIpcSecurity } = require('./ipc-security.cjs')
 const { installProcessFailureLogging, logFailure } = require('./logging.cjs')
+const { registerPdfPrinting } = require('./pdf-printing.cjs')
 const { createPreviewDiscovery } = require('./preview-discovery.cjs')
 const {
   configureDocumentationProtocol,
@@ -95,6 +96,7 @@ onIpc('clipboard:write', (event, text) => {
 if (!app.requestSingleInstanceLock()) {
   app.quit()
 } else {
+  registerPdfPrinting({ app, BrowserWindow, handleIpc })
   app.on('second-instance', () => {
     const window = BrowserWindow.getAllWindows()[0]
     if (!window) return

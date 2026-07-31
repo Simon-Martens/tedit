@@ -10,19 +10,35 @@ function createTinymistIpcController({ app, handleIpc, isAllowedPreviewRoot, onI
   const tinymistLsp = new TinymistLspService(sendToWindows)
 
   handleIpc('tinymist:start', async (_event, request) => {
-    const filePath = registry.normalizeDocumentPath(request.filePath)
-    const sourceFilePath = registry.normalizeDocumentPath(request.sourceFilePath)
-    if (!isAllowedPreviewRoot(sourceFilePath, filePath) || !registry.isAllowed(sourceFilePath)) {
+    if (
+      typeof request?.documentId !== 'string'
+      || !/^[A-Za-z0-9-]{1,64}$/.test(request.documentId)
+      || typeof request.source !== 'string'
+    ) throw new Error('Invalid Tinymist preview request.')
+    const runtimeBacked = !request.sourceFilePath
+    const sourceFilePath = request.sourceFilePath
+      ? registry.normalizeDocumentPath(request.sourceFilePath)
+      : path.join(app.getPath('cache'), 'tedit', 'untitled', `${request.documentId}.typ`)
+    const filePath = request.filePath
+      ? registry.normalizeDocumentPath(request.filePath)
+      : sourceFilePath
+    if (!runtimeBacked && (!isAllowedPreviewRoot(sourceFilePath, filePath) || !registry.isAllowed(sourceFilePath))) {
       throw new Error('Tinymist can only inspect a discovered preview root and open source file.')
     }
     const memoryFiles = normalizeMemoryFiles(request.memoryFiles)
-    void tinymist.start({ ...request, filePath, sourceFilePath, memoryFiles })
+    if (runtimeBacked) {
+      await fs.mkdir(path.dirname(sourceFilePath), { recursive: true })
+      await fs.writeFile(sourceFilePath, request.source, 'utf8')
+      memoryFiles.push({ filePath: sourceFilePath, source: request.source })
+    }
+    void tinymist.start({ ...request, filePath, sourceFilePath, memoryFiles, runtimeBacked })
   })
 
   onIpc('tinymist:update', (_event, request) => {
     tinymist.update({ ...request, memoryFiles: normalizeMemoryFiles(request.memoryFiles) })
   })
   onIpc('tinymist:locate', (_event, request) => tinymist.locate(request))
+  onIpc('tinymist:reveal-source', (_event, request) => tinymist.revealSource(request))
   onIpc('tinymist:stop', () => tinymist.stop())
 
   handleIpc('tinymist-lsp:start', async (_event, request) => {

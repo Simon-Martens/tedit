@@ -43,7 +43,7 @@ function App() {
   const sourcePreviewSync = useSourcePreviewSync(
     editor.activeDocument,
     editor.documents,
-    settings.showPreviewPosition || settings.autoScrollEnabled,
+    true,
   )
   const files = useFileCommands(editor)
   const desktopSession = useDesktopSession(editor)
@@ -130,8 +130,11 @@ function App() {
           onSourceChange={(source) => editor.changeSource(editor.activeDocument!, source)}
           vimEnabled={settings.vimEnabled}
           previewPositions={sourcePreviewSync.positions}
+          previewStatus={sourcePreviewSync.status}
           sourceCursorLocation={sourcePreviewSync.sourceCursorLocation}
+          sourceReveal={sourcePreviewSync.sourceReveal}
           onCursorPositionChange={sourcePreviewSync.locate}
+          onPreviewPoint={sourcePreviewSync.revealPreviewSource}
           onCursorChange={(line, column) => setCursorPosition({ line, column })}
           showPreviewPosition={settings.showPreviewPosition}
           autoScrollEnabled={settings.autoScrollEnabled}
@@ -140,7 +143,6 @@ function App() {
           autocompleteEnabled={settings.autocompleteEnabled}
           errorHighlightingEnabled={settings.errorHighlightingEnabled}
           compilationOpen={compilation.open}
-          compilationAutoSized={compilation.mode === 'error'}
           onSave={() => void files.saveFile()}
           bibliographies={bibliographies}
           languageServerDocuments={toLanguageServerDocuments(editor.documents)}

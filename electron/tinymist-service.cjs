@@ -1,4 +1,5 @@
 const { spawn } = require('node:child_process')
+const fs = require('node:fs/promises')
 const net = require('node:net')
 const path = require('node:path')
 const WebSocket = require('ws')
@@ -67,12 +68,13 @@ class TinymistService {
     return result
   }
 
-  async startNow({ documentId, filePath, sourceFilePath, memoryFiles = [] }) {
+  async startNow({ documentId, filePath, sourceFilePath, memoryFiles = [], runtimeBacked = false }) {
     await this.stopNow()
     const generation = ++this.generation
     this.documentId = documentId
     this.filePath = path.resolve(filePath)
     this.sourceFilePath = path.resolve(sourceFilePath)
+    this.runtimeBacked = runtimeBacked
     this.memoryFiles = new Map(memoryFiles.map((file) => [path.resolve(file.filePath), file.source]))
     this.status(documentId, 'installing', 'Locating Tinymist...')
     let spawnError
@@ -141,7 +143,7 @@ class TinymistService {
       const effectiveError = spawnError ?? error
       const message = effectiveError instanceof Error ? effectiveError.message : String(effectiveError)
       this.status(documentId, 'error', spawnError ? `Could not start Tinymist preview: ${message}` : message)
-      this.cancelCurrentOperation()
+      await this.stopNow()
     }
   }
 
@@ -177,13 +179,32 @@ class TinymistService {
         }
       }
     }
+    if (message.event === 'editorScrollTo' && Array.isArray(message.start) && Array.isArray(message.end)) {
+      this.sendEvent('tinymist:source-reveal', {
+        documentId,
+        filePath: this.runtimeBacked ? undefined : message.filepath,
+        start: { line: message.start[0], character: message.start[1] },
+        end: { line: message.end[0], character: message.end[1] },
+      })
+    }
   }
 
   handleDataMessage(data, isBinary, generation, documentId) {
     if (generation !== this.generation || documentId !== this.documentId) return
     if (!isBinary) return
     const buffer = Buffer.from(data)
-    if (buffer.length < 5 || buffer.subarray(0, 5).toString('utf8') !== 'jump,') return
+    const comma = buffer.indexOf(0x2c)
+    if (comma < 0) return
+    const event = buffer.subarray(0, comma).toString('utf8')
+    if (event === 'new' || event === 'diff-v1') {
+      this.sendEvent('tinymist:preview-update', {
+        documentId,
+        kind: event,
+        data: Uint8Array.from(buffer.subarray(comma + 1)),
+      })
+      return
+    }
+    if (event !== 'jump') return
     const positions = buffer.toString('utf8').slice(5).split(',').map((entry) => {
       const [page, x, y] = entry.trim().split(/\s+/).map(Number)
       return { page, x, y }
@@ -204,11 +225,24 @@ class TinymistService {
     this.memoryUpdateSettleTimer = undefined
   }
 
-  update({ documentId, memoryFiles = [] }) {
+  update({ documentId, source, memoryFiles = [] }) {
     if (documentId !== this.documentId) return
     this.memoryFiles = new Map(memoryFiles.map((file) => [path.resolve(file.filePath), file.source]))
+    if (this.runtimeBacked && typeof source === 'string') this.memoryFiles.set(this.sourceFilePath, source)
     this.markMemoryUpdatePending()
     this.sendMemoryFiles('updateMemoryFiles')
+  }
+
+  revealSource({ documentId, page, x, y }) {
+    if (
+      documentId !== this.documentId
+      || this.dataSocket?.readyState !== WebSocket.OPEN
+      || !Number.isSafeInteger(page)
+      || page < 1
+      || !Number.isFinite(x)
+      || !Number.isFinite(y)
+    ) return
+    this.dataSocket.send(`src-point ${JSON.stringify({ page_no: page, x, y })}`)
   }
 
   locate({ documentId, requestId, line, character }) {
@@ -278,10 +312,12 @@ class TinymistService {
     this.memoryUpdateSettleTimer = undefined
     this.latestLocate = undefined
     const child = this.child
+    const runtimeSourceFilePath = this.runtimeBacked ? this.sourceFilePath : undefined
     this.child = undefined
     this.documentId = undefined
     this.filePath = undefined
     this.sourceFilePath = undefined
+    this.runtimeBacked = false
     this.memoryFiles = new Map()
     this.memoryUpdatePending = false
     if (child && child.exitCode === null) {
@@ -297,6 +333,11 @@ class TinymistService {
       ])
       clearTimeout(timeout)
       if (child.exitCode === null) child.kill('SIGKILL')
+    }
+    if (runtimeSourceFilePath) {
+      await fs.rm(runtimeSourceFilePath, { force: true }).catch((error) => {
+        console.error(`[tedit:tinymist-preview] Could not remove temporary source: ${error.message}`)
+      })
     }
   }
 }

@@ -1,8 +1,8 @@
 {
   "name": "tedit",
-  "description": "A desktop Typst editor with live PDF preview.",
+  "description": "A desktop Typst editor with a live Tinymist preview.",
   "private": true,
-  "version": "0.1.0-beta.5",
+  "version": "0.1.0-beta.6",
   "type": "module",
   "main": "electron/main.cjs",
   "desktopName": "tedit.desktop",
@@ -20,6 +20,8 @@
   },
   "dependencies": {
     "@monaco-editor/react": "^4.7.0",
+    "@myriaddreamin/typst-ts-renderer": "0.7.0-rc1",
+    "@myriaddreamin/typst.ts": "0.7.0-rc1",
     "@remixicon/react": "^4.9.0",
     "extract-zip": "^2.0.1",
     "monaco-editor": "^0.56.0",

@@ -3,6 +3,7 @@ const { contextBridge, ipcRenderer } = require('electron')
 contextBridge.exposeInMainWorld('typstDesktop', {
   openDocument: () => ipcRenderer.invoke('document:open'),
   saveDocument: (request) => ipcRenderer.invoke('document:save', request),
+  printPdf: (pdf) => ipcRenderer.invoke('pdf:print', pdf),
   watchDocuments: (filePaths) => ipcRenderer.invoke('document:watch', filePaths),
   onDocumentWatchStatus: (listener) => {
     const handler = (_event, payload) => listener(payload)
@@ -43,11 +44,22 @@ contextBridge.exposeInMainWorld('typstDesktop', {
   startSourceSync: (request) => ipcRenderer.invoke('tinymist:start', request),
   updateSourceSync: (request) => ipcRenderer.send('tinymist:update', request),
   locateSource: (request) => ipcRenderer.send('tinymist:locate', request),
+  revealPreviewSource: (request) => ipcRenderer.send('tinymist:reveal-source', request),
   stopSourceSync: () => ipcRenderer.send('tinymist:stop'),
   onSourceJump: (listener) => {
     const handler = (_event, payload) => listener(payload)
     ipcRenderer.on('tinymist:jump', handler)
     return () => ipcRenderer.removeListener('tinymist:jump', handler)
+  },
+  onPreviewUpdate: (listener) => {
+    const handler = (_event, payload) => listener(payload)
+    ipcRenderer.on('tinymist:preview-update', handler)
+    return () => ipcRenderer.removeListener('tinymist:preview-update', handler)
+  },
+  onPreviewSourceReveal: (listener) => {
+    const handler = (_event, payload) => listener(payload)
+    ipcRenderer.on('tinymist:source-reveal', handler)
+    return () => ipcRenderer.removeListener('tinymist:source-reveal', handler)
   },
   onSourceSyncStatus: (listener) => {
     const handler = (_event, payload) => listener(payload)

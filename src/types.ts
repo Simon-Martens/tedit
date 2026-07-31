@@ -143,6 +143,7 @@ export interface DesktopSession {
 }
 
 export interface DesktopApi {
+  printPdf(pdf: Uint8Array): Promise<{ success: boolean; failureReason?: string }>
   openDocument(): Promise<DesktopDocument | null>
   saveDocument(request: {
     filePath?: string
@@ -193,17 +194,22 @@ export interface DesktopApi {
   stopPreviewRootDiscovery(): void
   startSourceSync(request: {
     documentId: string
-    filePath: string
-    sourceFilePath: string
+    filePath?: string
+    sourceFilePath?: string
+    source: string
     memoryFiles: Array<{ filePath: string; source: string }>
   }): Promise<void>
   updateSourceSync(request: {
     documentId: string
+    source: string
     memoryFiles: Array<{ filePath: string; source: string }>
   }): void
   locateSource(request: { documentId: string; requestId: number; line: number; character: number }): void
+  revealPreviewSource(request: { documentId: string; page: number; x: number; y: number }): void
   stopSourceSync(): void
   onSourceJump(listener: (jump: SourceJump) => void): () => void
+  onPreviewUpdate(listener: (update: PreviewUpdate) => void): () => void
+  onPreviewSourceReveal(listener: (reveal: PreviewSourceReveal) => void): () => void
   onSourceSyncStatus(listener: (status: SourceSyncStatus) => void): () => void
   onSourceDependencyChange(listener: (update: { documentId: string }) => void): () => void
   getSettings(): Promise<AppSettings>
@@ -276,6 +282,19 @@ export interface SourceJump {
   documentId: string
   requestId: number
   positions: PreviewPosition[]
+}
+
+export interface PreviewUpdate {
+  documentId: string
+  kind: 'new' | 'diff-v1'
+  data: Uint8Array
+}
+
+export interface PreviewSourceReveal {
+  documentId: string
+  filePath?: string
+  start: SourcePosition
+  end: SourcePosition
 }
 
 export interface SourceSyncStatus {

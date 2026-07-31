@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
-import type { EditorDocument, PreviewPosition, SourceCursorLocation, SourceSyncStatus } from '../types'
+import type { EditorDocument, PreviewPosition, PreviewSourceReveal, SourceCursorLocation, SourceSyncStatus } from '../types'
 
 const DISABLED_STATUS: SourceSyncStatus = {
   documentId: '',
   state: 'disabled',
-  message: 'Save the document to enable source synchronization.',
+  message: 'The live preview requires the tedit desktop app.',
 }
 
 export function useSourcePreviewSync(
@@ -14,6 +14,7 @@ export function useSourcePreviewSync(
 ) {
   const [positions, setPositions] = useState<PreviewPosition[]>([])
   const [sourceCursorLocation, setSourceCursorLocation] = useState<SourceCursorLocation>()
+  const [sourceReveal, setSourceReveal] = useState<PreviewSourceReveal>()
   const [status, setStatus] = useState<SourceSyncStatus>(DISABLED_STATUS)
   const lastLocationRef = useRef<SourceCursorLocation | undefined>(undefined)
   const requestIdRef = useRef(0)
@@ -30,9 +31,6 @@ export function useSourcePreviewSync(
   const canLocate = enabled
     && document !== undefined
     && status.state === 'ready'
-    && document.compileState === 'success'
-    && document.attemptedRevision === document.sourceRevision
-    && document.attemptedDependencyRevision === document.dependencyRevision
   const canLocateRef = useRef(canLocate)
   canLocateRef.current = canLocate
 
@@ -40,6 +38,7 @@ export function useSourcePreviewSync(
     const desktop = window.typstDesktop
     lastLocationRef.current = undefined
     setSourceCursorLocation(undefined)
+    setSourceReveal(undefined)
     requestIdRef.current = 0
     setPositions([])
     if (!document) {
@@ -47,7 +46,7 @@ export function useSourcePreviewSync(
       return
     }
     setStatus({ documentId: document.id, state: 'starting', message: 'Starting source synchronization...' })
-    if (!desktop || !document.filePath || !previewFilePath) {
+    if (!desktop) {
       setStatus({ ...DISABLED_STATUS, documentId: document.id })
       return
     }
@@ -62,10 +61,14 @@ export function useSourcePreviewSync(
       if (nextStatus.documentId !== document.id) return
       setStatus(nextStatus)
     })
+    const removeSourceRevealListener = desktop.onPreviewSourceReveal((reveal) => {
+      if (reveal.documentId === document.id) setSourceReveal(reveal)
+    })
     void desktop.startSourceSync({
       documentId: document.id,
       filePath: previewFilePath,
       sourceFilePath: document.filePath,
+      source: document.source,
       memoryFiles,
     }).catch((error) => {
       setStatus({
@@ -78,21 +81,19 @@ export function useSourcePreviewSync(
     return () => {
       removeJumpListener()
       removeStatusListener()
+      removeSourceRevealListener()
       desktop.stopSourceSync()
     }
   }, [document?.id, document?.filePath, previewFilePath, enabled])
 
   useEffect(() => {
-    if (!window.typstDesktop || !document?.filePath) return
-    window.typstDesktop.updateSourceSync({ documentId: document.id, memoryFiles })
-  }, [document?.id, document?.filePath, memoryFilesKey])
+    if (!window.typstDesktop || !document) return
+    window.typstDesktop.updateSourceSync({ documentId: document.id, source: document.source, memoryFiles })
+  }, [document?.id, document?.sourceRevision, memoryFilesKey])
 
   useEffect(() => {
     if (enabled && document && (
       status.state === 'ready'
-      && document.compileState === 'success'
-      && document.attemptedRevision === document.sourceRevision
-      && document.attemptedDependencyRevision === document.dependencyRevision
       && lastLocationRef.current
     )) {
       requestIdRef.current += 1
@@ -104,11 +105,7 @@ export function useSourcePreviewSync(
     }
   }, [
     document?.id,
-    document?.compileState,
-    document?.attemptedRevision,
     document?.sourceRevision,
-    document?.attemptedDependencyRevision,
-    document?.dependencyRevision,
     status.state,
     enabled,
   ])
@@ -128,5 +125,10 @@ export function useSourcePreviewSync(
     })
   }
 
-  return { positions, sourceCursorLocation, status, locate }
+  const revealPreviewSource = (position: PreviewPosition) => {
+    if (!document) return
+    window.typstDesktop?.revealPreviewSource({ documentId: document.id, ...position })
+  }
+
+  return { positions, sourceCursorLocation, sourceReveal, status, locate, revealPreviewSource }
 }

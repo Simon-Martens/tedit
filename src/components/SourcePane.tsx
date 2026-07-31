@@ -6,7 +6,7 @@ import { configureTypstLanguage, getTypstFoldingRanges } from '../lib/typstLangu
 import { reportError } from '../lib/logging'
 import { toMonacoCompletions } from '../lib/monacoCompletions'
 import type { BibliographyBuffer } from '../hooks/useBibliographies'
-import type { EditorDocument, LanguageServerDocument, SourceCursorLocation } from '../types'
+import type { EditorDocument, LanguageServerDocument, PreviewSourceReveal, SourceCursorLocation } from '../types'
 import { Icon } from './Icon'
 
 interface VimRegister {
@@ -103,6 +103,7 @@ export function SourcePane({
   autocompleteEnabled,
   errorHighlightingEnabled,
   onCursorPositionChange,
+  sourceReveal,
   onCursorChange,
   onSave,
   bibliographies,
@@ -121,6 +122,7 @@ export function SourcePane({
   autocompleteEnabled: boolean
   errorHighlightingEnabled: boolean
   onCursorPositionChange(location: SourceCursorLocation): void
+  sourceReveal?: PreviewSourceReveal
   onCursorChange(line: number, column: number): void
   onSave(): void
   bibliographies: BibliographyBuffer[]
@@ -166,6 +168,24 @@ export function SourcePane({
   autocompleteEnabledRef.current = autocompleteEnabled
   errorHighlightingEnabledRef.current = errorHighlightingEnabled
   diagnosticsRef.current = diagnostics
+
+  useEffect(() => {
+    const editor = editorRef.current
+    if (
+      !editor
+      || !sourceReveal
+      || (sourceReveal.filePath && sourceReveal.filePath !== document.filePath)
+    ) return
+    const selection = {
+      startLineNumber: sourceReveal.start.line + 1,
+      startColumn: sourceReveal.start.character + 1,
+      endLineNumber: sourceReveal.end.line + 1,
+      endColumn: sourceReveal.end.character + 1,
+    }
+    editor.setSelection(selection)
+    editor.revealRangeInCenter(selection)
+    editor.focus()
+  }, [document.filePath, sourceReveal])
 
   const initializeVim = (editor: Parameters<OnMount>[0]) => {
     vimAdapterRef.current?.dispose()

@@ -182,6 +182,69 @@
   text-align: center;
 }
 
+.typst-preview-viewport {
+  overflow: auto;
+}
+
+.typst-preview-content {
+  position: relative;
+  width: max-content;
+  min-width: 100%;
+  min-height: 100%;
+}
+
+.typst-preview-document {
+  width: max-content;
+  min-width: 100%;
+  padding: 0 4px 12px;
+}
+
+.typst-preview-document > svg {
+  display: block;
+  margin: 0 auto;
+  overflow: visible;
+  background: transparent;
+  transform-origin: top center;
+}
+
+.typst-preview-document .tedit-page-background {
+  pointer-events: none;
+  fill: white;
+  filter: drop-shadow(0 4px 5px rgb(0 0 0 / 24%));
+}
+
+.typst-preview-document .tsel,
+.typst-preview-document .tsel span {
+  position: fixed;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  color: transparent;
+  text-align: justify;
+  text-align-last: justify;
+  white-space: pre;
+}
+
+.typst-preview-document .tsel::selection,
+.typst-preview-document .tsel span::selection {
+  color: transparent;
+  background: rgb(125 185 222 / 63%);
+}
+
+.typst-preview-document .pseudo-link {
+  pointer-events: all;
+  cursor: pointer;
+  fill: transparent;
+}
+
+.typst-preview-document .typst-page {
+  cursor: text;
+}
+
+.typst-preview-viewport .pdf-location-marker {
+  pointer-events: none;
+}
+
 .pdf-canvas-viewport::-webkit-scrollbar,
 .pdf-canvas-viewport::-webkit-scrollbar-track,
 .pdf-canvas-viewport::-webkit-scrollbar-track-piece,

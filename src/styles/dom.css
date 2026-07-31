@@ -423,8 +423,13 @@ a:focus-visible {
 }
 
 .footer-compile-status-error i {
-  background: var(--color-error);
-  box-shadow: 0 0 0 2px rgb(255 127 110 / 14%);
+  background: #ff3b30;
+  box-shadow: 0 0 0 2px rgb(255 59 48 / 18%);
+}
+
+.footer-compile-status-error {
+  color: #ff3b30;
+  font-weight: 700;
 }
 
 .footer-compile-status-success i {
@@ -895,15 +900,20 @@ a:focus-visible {
   min-width: 0;
   min-height: 0;
   overflow: hidden;
-  grid-template-rows: minmax(180px, var(--source-pane-size)) 6px minmax(120px, 1fr);
-}
-
-.left-pane.output-hidden {
   grid-template-rows: minmax(0, 1fr);
 }
 
-.left-pane.output-error {
-  grid-template-rows: minmax(180px, 1fr) 1px auto;
+.right-pane {
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  grid-template-rows: minmax(0, 1fr) fit-content(50%);
+  background: #292a26;
+}
+
+.right-pane.output-hidden {
+  grid-template-rows: minmax(0, 1fr);
 }
 
 .editor-stack {
@@ -928,15 +938,6 @@ a:focus-visible {
 
 .editor-stack.bibliography-maximized > .bibliography-panel {
   grid-row: 1;
-}
-
-.output-auto-divider {
-  background: var(--color-border);
-}
-
-.output-error .output-panel,
-.output-error .output-lines {
-  max-height: 260px;
 }
 
 .source-panel,
@@ -1016,7 +1017,8 @@ a:focus-visible {
 
 .output-panel {
   grid-template-rows: minmax(0, 1fr);
-  background: #151612;
+  border: 0;
+  background: #292a26;
 }
 
 .output-lines {
@@ -1029,9 +1031,10 @@ a:focus-visible {
 
 .output-lines > div {
   display: flex;
+  width: max-content;
+  min-width: 100%;
   gap: 9px;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
+  white-space: pre;
 }
 
 .prompt {
@@ -1178,7 +1181,6 @@ a:focus-visible {
   background: #647d17;
 }
 
-.theme-light .output-auto-divider,
 .theme-light .pane-resizer {
   background: #d0d2c9;
 }
@@ -1206,7 +1208,7 @@ a:focus-visible {
 }
 
 .theme-light .output-panel {
-  background: #f6f6f2;
+  background: #dfe0da;
 }
 
 .theme-light .output-lines {
@@ -1264,6 +1266,7 @@ a:focus-visible {
 
   .workspace,
   .left-pane,
+  .right-pane,
   .editor-stack {
     display: block;
   }
@@ -1277,8 +1280,7 @@ a:focus-visible {
   }
 
   .output-panel {
-    height: 230px;
-    border-bottom: 1px solid var(--color-border);
+    max-height: 50vh;
   }
 
   .bibliography-panel {

@@ -72,6 +72,7 @@ export function useTypstCompilation(
             [output.pdf],
             { type: 'application/pdf' },
           ))
+          const previousUrl = document.pdfUrl
           const elapsed = output.durationMs
           updateRef.current(document.id, {
             attemptedRevision: document.sourceRevision,
@@ -91,6 +92,9 @@ export function useTypstCompilation(
             ],
             diagnostics: [],
           })
+          if (previousUrl && previousUrl !== nextUrl) {
+            window.setTimeout(() => URL.revokeObjectURL(previousUrl), 30_000)
+          }
         } catch (error) {
           if (version !== versionRef.current) return
           updateRef.current(document.id, {
