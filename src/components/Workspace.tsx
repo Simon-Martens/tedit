@@ -36,6 +36,7 @@ export function Workspace({
   foldingEnabled,
   autocompleteEnabled,
   errorHighlightingEnabled,
+  previewRenderBackoffMs,
   compilationOpen,
   onSave,
   onDeleteFile,
@@ -60,6 +61,7 @@ export function Workspace({
   foldingEnabled: boolean
   autocompleteEnabled: boolean
   errorHighlightingEnabled: boolean
+  previewRenderBackoffMs: number
   compilationOpen: boolean
   onSave(): void
   onDeleteFile(): void
@@ -211,6 +213,7 @@ export function Workspace({
           status={previewStatus}
           showPreviewPosition={showPreviewPosition}
           autoScrollEnabled={autoScrollEnabled}
+          renderBackoffMs={previewRenderBackoffMs}
           onPreviewPoint={onPreviewPoint}
           key={`${document.id}:${document.previewRootPath ?? document.filePath ?? ''}`}
         />

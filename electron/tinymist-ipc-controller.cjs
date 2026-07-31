@@ -4,10 +4,41 @@ const { formatTinymistExportError, TinymistLspService } = require('./tinymist-ls
 const { TinymistService } = require('./tinymist-service.cjs')
 const { logFailure } = require('./logging.cjs')
 
+const INACTIVE_SERVICE_GRACE_MS = 30_000
+
 function createTinymistIpcController({ app, handleIpc, isAllowedPreviewRoot, onIpc, registry, sendToWindows }) {
-  let tinymistLspStartGeneration = 0
-  const tinymist = new TinymistService(sendToWindows)
-  const tinymistLsp = new TinymistLspService(sendToWindows)
+  const previewServices = new Map()
+  const lspServices = new Map()
+
+  const acquireService = (services, documentId, create) => {
+    let entry = services.get(documentId)
+    if (!entry) {
+      entry = {
+        service: create(),
+        stopTimer: undefined,
+        startGeneration: 0,
+        ready: false,
+        pendingSync: undefined,
+        pendingUpdate: undefined,
+      }
+      services.set(documentId, entry)
+    }
+    clearTimeout(entry.stopTimer)
+    entry.stopTimer = undefined
+    return entry
+  }
+
+  const releaseService = (services, documentId) => {
+    const entry = services.get(documentId)
+    if (!entry) return
+    entry.startGeneration += 1
+    clearTimeout(entry.stopTimer)
+    entry.stopTimer = setTimeout(() => {
+      if (services.get(documentId) !== entry) return
+      services.delete(documentId)
+      void entry.service.stop()
+    }, INACTIVE_SERVICE_GRACE_MS)
+  }
 
   handleIpc('tinymist:start', async (_event, request) => {
     if (
@@ -15,6 +46,9 @@ function createTinymistIpcController({ app, handleIpc, isAllowedPreviewRoot, onI
       || !/^[A-Za-z0-9-]{1,64}$/.test(request.documentId)
       || typeof request.source !== 'string'
     ) throw new Error('Invalid Tinymist preview request.')
+    const entry = acquireService(previewServices, request.documentId, () => new TinymistService(sendToWindows))
+    const startGeneration = ++entry.startGeneration
+    entry.ready = false
     const runtimeBacked = !request.sourceFilePath
     const sourceFilePath = request.sourceFilePath
       ? registry.normalizeDocumentPath(request.sourceFilePath)
@@ -31,18 +65,33 @@ function createTinymistIpcController({ app, handleIpc, isAllowedPreviewRoot, onI
       await fs.writeFile(sourceFilePath, request.source, 'utf8')
       memoryFiles.push({ filePath: sourceFilePath, source: request.source })
     }
-    void tinymist.start({ ...request, filePath, sourceFilePath, memoryFiles, runtimeBacked })
+    if (startGeneration !== entry.startGeneration) return
+    const startRequest = { ...request, filePath, sourceFilePath, memoryFiles, runtimeBacked }
+    if (!entry.service.resume(startRequest)) await entry.service.start(startRequest)
+    if (startGeneration !== entry.startGeneration) return
+    entry.ready = true
+    if (entry.pendingUpdate) {
+      entry.service.update(entry.pendingUpdate)
+      entry.pendingUpdate = undefined
+    }
   })
 
   onIpc('tinymist:update', (_event, request) => {
-    tinymist.update({ ...request, memoryFiles: normalizeMemoryFiles(request.memoryFiles) })
+    const entry = previewServices.get(request?.documentId)
+    if (!entry) return
+    const update = {
+      ...request,
+      memoryFiles: normalizeMemoryFiles(request.memoryFiles),
+    }
+    if (!entry.ready) entry.pendingUpdate = update
+    else entry.service.update(update)
   })
-  onIpc('tinymist:locate', (_event, request) => tinymist.locate(request))
-  onIpc('tinymist:reveal-source', (_event, request) => tinymist.revealSource(request))
-  onIpc('tinymist:stop', () => tinymist.stop())
+  onIpc('tinymist:locate', (_event, request) => previewServices.get(request?.documentId)?.service.locate(request))
+  onIpc('tinymist:reveal-source', (_event, request) => previewServices.get(request?.documentId)?.service.revealSource(request))
+  onIpc('tinymist:refresh', (_event, request) => previewServices.get(request?.documentId)?.service.refresh(request))
+  onIpc('tinymist:stop', (_event, request) => releaseService(previewServices, request?.documentId))
 
   handleIpc('tinymist-lsp:start', async (_event, request) => {
-    const startGeneration = ++tinymistLspStartGeneration
     if (
       typeof request?.documentId !== 'string'
       || !/^[A-Za-z0-9-]{1,64}$/.test(request.documentId)
@@ -51,6 +100,9 @@ function createTinymistIpcController({ app, handleIpc, isAllowedPreviewRoot, onI
       || !Number.isSafeInteger(request.version)
       || !Number.isSafeInteger(request.sourceVersion)
     ) throw new Error('Invalid Tinymist language-server start request.')
+    const entry = acquireService(lspServices, request.documentId, () => new TinymistLspService(sendToWindows))
+    const startGeneration = ++entry.startGeneration
+    entry.ready = false
     const activeFilePath = request.filePath
       ? registry.normalizeDocumentPath(request.filePath)
       : path.join(app.getPath('cache'), 'tedit', 'untitled', `${request.documentId}.typ`)
@@ -70,8 +122,8 @@ function createTinymistIpcController({ app, handleIpc, isAllowedPreviewRoot, onI
       ? request.source
       : await fs.readFile(filePath, 'utf8'))
     const version = openRoot?.version ?? (filePath === activeFilePath ? request.version : 0)
-    if (startGeneration !== tinymistLspStartGeneration) return
-    await tinymistLsp.start({
+    if (startGeneration !== entry.startGeneration) return
+    const startRequest = {
       ...request,
       activeFilePath,
       filePath,
@@ -80,11 +132,22 @@ function createTinymistIpcController({ app, handleIpc, isAllowedPreviewRoot, onI
       activeVersion: request.sourceVersion,
       rootDiskBacked: !openRoot && filePath !== activeFilePath,
       openDocuments,
-    })
+    }
+    if (!await entry.service.resume(startRequest)) await entry.service.start(startRequest)
+    if (startGeneration !== entry.startGeneration) return
+    entry.ready = true
+    if (entry.pendingSync) {
+      await entry.service.syncDocuments(entry.pendingSync)
+      entry.pendingSync = undefined
+    }
   })
   handleIpc('tinymist-lsp:sync-documents', async (_event, request) => {
     const openDocuments = registry.normalizeLanguageServerDocuments(request.openDocuments)
-    await tinymistLsp.syncDocuments({ ...request, openDocuments })
+    const entry = lspServices.get(request?.documentId)
+    if (!entry) return
+    const syncRequest = { ...request, openDocuments }
+    if (!entry.ready) entry.pendingSync = syncRequest
+    else await entry.service.syncDocuments(syncRequest)
   })
   handleIpc('tinymist-lsp:complete', async (_event, request) => {
     if (
@@ -103,7 +166,9 @@ function createTinymistIpcController({ app, handleIpc, isAllowedPreviewRoot, onI
       ))
     ) throw new Error('Invalid Tinymist completion request.')
     const openDocuments = registry.normalizeLanguageServerDocuments(request.openDocuments)
-    return tinymistLsp.complete({ ...request, openDocuments })
+    const service = lspServices.get(request.documentId)?.service
+    if (!service) throw new Error('Tinymist language server is not running for this document.')
+    return service.complete({ ...request, openDocuments })
   })
   handleIpc('tinymist-lsp:compile', async (_event, request) => {
     try {
@@ -116,15 +181,16 @@ function createTinymistIpcController({ app, handleIpc, isAllowedPreviewRoot, onI
         ? registry.normalizeDocumentPath(request.previewFilePath)
         : undefined
       const openDocuments = registry.normalizeLanguageServerDocuments(request.openDocuments)
-      return await tinymistLsp.compile({ ...request, previewFilePath, openDocuments })
+      const service = lspServices.get(request.documentId)?.service
+      if (!service) throw new Error('Tinymist language server is not running for this document.')
+      return await service.compile({ ...request, previewFilePath, openDocuments })
     } catch (error) {
       logFailure('tinymist-compile', error, { documentId: request?.documentId })
       return { error: formatTinymistExportError(error) }
     }
   })
-  onIpc('tinymist-lsp:stop', () => {
-    tinymistLspStartGeneration += 1
-    return tinymistLsp.stop()
+  onIpc('tinymist-lsp:stop', (_event, request) => {
+    releaseService(lspServices, request?.documentId)
   })
 
   function normalizeMemoryFiles(documents) {
@@ -137,7 +203,11 @@ function createTinymistIpcController({ app, handleIpc, isAllowedPreviewRoot, onI
   }
 
   function stop() {
-    return Promise.all([tinymist.stop(), tinymistLsp.stop()])
+    const entries = [...previewServices.values(), ...lspServices.values()]
+    previewServices.clear()
+    lspServices.clear()
+    for (const entry of entries) clearTimeout(entry.stopTimer)
+    return Promise.all(entries.map((entry) => entry.service.stop()))
   }
 
   return { stop }

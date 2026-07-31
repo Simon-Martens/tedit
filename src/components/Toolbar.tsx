@@ -27,6 +27,8 @@ interface ToolbarProps {
   onErrorHighlightingEnabledChange(enabled: boolean): void
   automaticErrorPopupEnabled: boolean
   onAutomaticErrorPopupEnabledChange(enabled: boolean): void
+  previewRenderBackoffMs: number
+  onPreviewRenderBackoffMsChange(value: number): void
 }
 
 export function Toolbar({
@@ -53,6 +55,8 @@ export function Toolbar({
   onErrorHighlightingEnabledChange,
   automaticErrorPopupEnabled,
   onAutomaticErrorPopupEnabledChange,
+  previewRenderBackoffMs,
+  onPreviewRenderBackoffMsChange,
 }: ToolbarProps) {
   const documentTitle = document
     ? [document.repoName, document.fileName].filter(Boolean).join(' / ')
@@ -119,6 +123,8 @@ export function Toolbar({
           onErrorHighlightingEnabledChange={onErrorHighlightingEnabledChange}
           automaticErrorPopupEnabled={automaticErrorPopupEnabled}
           onAutomaticErrorPopupEnabledChange={onAutomaticErrorPopupEnabledChange}
+          previewRenderBackoffMs={previewRenderBackoffMs}
+          onPreviewRenderBackoffMsChange={onPreviewRenderBackoffMsChange}
         />
       </div>
     </header>

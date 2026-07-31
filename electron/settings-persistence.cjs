@@ -11,6 +11,7 @@ const defaultSettings = {
   autocompleteEnabled: true,
   errorHighlightingEnabled: true,
   automaticErrorPopupEnabled: true,
+  previewRenderBackoffMs: 180,
 }
 
 function createSettingsPersistence({ app, handleIpc }) {
@@ -18,9 +19,14 @@ function createSettingsPersistence({ app, handleIpc }) {
   let settingsWrite = Promise.resolve()
 
   function normalizeSettings(settings) {
-    return Object.fromEntries(Object.keys(defaultSettings).flatMap((key) => (
-      typeof settings?.[key] === 'boolean' ? [[key, settings[key]]] : []
-    )))
+    return Object.fromEntries(Object.keys(defaultSettings).flatMap((key) => {
+      const value = settings?.[key]
+      if (typeof defaultSettings[key] === 'boolean' && typeof value === 'boolean') return [[key, value]]
+      if (typeof defaultSettings[key] === 'number' && Number.isFinite(value)) {
+        return [[key, Math.max(0, Math.min(5_000, Math.round(value)))]]
+      }
+      return []
+    }))
   }
 
   async function readSettings() {

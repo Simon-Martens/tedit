@@ -24,7 +24,6 @@ export function useEditorDocuments(): EditorDocumentsController {
   const [activeId, setActiveId] = useState('')
   const documentsRef = useRef(documents)
   const activeIdRef = useRef(activeId)
-  const activatedDocumentRef = useRef('')
   documentsRef.current = documents
   activeIdRef.current = activeId
 
@@ -148,14 +147,6 @@ export function useEditorDocuments(): EditorDocumentsController {
       return next
     })
   }
-
-  useEffect(() => {
-    if (!activeDocument || activatedDocumentRef.current === activeDocument.id) return
-    activatedDocumentRef.current = activeDocument.id
-    updateDocument(activeDocument.id, {
-      dependencyRevision: activeDocument.dependencyRevision + 1,
-    })
-  }, [activeDocument?.id])
 
   useEffect(() => () => {
     for (const document of documentsRef.current) {

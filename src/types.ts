@@ -135,6 +135,7 @@ export interface AppSettings {
   autocompleteEnabled: boolean
   errorHighlightingEnabled: boolean
   automaticErrorPopupEnabled: boolean
+  previewRenderBackoffMs: number
 }
 
 export interface DesktopSession {
@@ -215,12 +216,13 @@ export interface DesktopApi {
   }): void
   locateSource(request: { documentId: string; requestId: number; line: number; character: number }): void
   revealPreviewSource(request: { documentId: string; page: number; x: number; y: number }): void
-  stopSourceSync(): void
+  stopSourceSync(request: { documentId: string }): void
   onSourceJump(listener: (jump: SourceJump) => void): () => void
   onPreviewUpdate(listener: (update: PreviewUpdate) => void): () => void
   onPreviewSourceReveal(listener: (reveal: PreviewSourceReveal) => void): () => void
   onSourceSyncStatus(listener: (status: SourceSyncStatus) => void): () => void
   onSourceDependencyChange(listener: (update: { documentId: string }) => void): () => void
+  refreshSourceSync(request: { documentId: string }): void
   getSettings(): Promise<AppSettings>
   updateSettings(settings: Partial<AppSettings>): Promise<AppSettings>
   restoreSession(): Promise<DesktopSession>
@@ -260,7 +262,7 @@ export interface DesktopApi {
     | { cancelled: true; error?: never }
     | { error: string }
   >
-  stopLanguageServer(): void
+  stopLanguageServer(request: { documentId: string }): void
   onLanguageServerStatus(listener: (status: LanguageServerStatus) => void): () => void
   onLanguageServerDiagnostics(listener: (update: {
     documentId: string

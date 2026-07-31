@@ -822,7 +822,7 @@ a:focus-visible {
   font-size: 9px;
 }
 
-.setting-row input {
+.setting-row input[type='checkbox'] {
   position: relative;
   width: 28px;
   height: 16px;
@@ -835,7 +835,7 @@ a:focus-visible {
   cursor: pointer;
 }
 
-.setting-row input::after {
+.setting-row input[type='checkbox']::after {
   position: absolute;
   top: 2px;
   left: 2px;
@@ -847,14 +847,32 @@ a:focus-visible {
   transition: transform 120ms ease, background 120ms ease;
 }
 
-.setting-row input:checked {
+.setting-row input[type='checkbox']:checked {
   border-color: #82933f;
   background: #3e4825;
 }
 
-.setting-row input:checked::after {
+.setting-row input[type='checkbox']:checked::after {
   background: var(--color-accent);
   transform: translateX(12px);
+}
+
+.setting-row .setting-number {
+  width: 64px;
+  height: 26px;
+  flex: 0 0 auto;
+  padding: 0 5px;
+  border: 1px solid #51544a;
+  border-radius: 4px;
+  outline: 0;
+  color: #dfe0da;
+  background: #181915;
+  font: 10px var(--font-mono);
+  text-align: right;
+}
+
+.setting-row .setting-number:focus {
+  border-color: var(--color-accent);
 }
 
 .topbar button,
@@ -1163,18 +1181,24 @@ a:focus-visible {
   color: #777c70;
 }
 
-.theme-light .setting-row input {
+.theme-light .setting-row input[type='checkbox'] {
   border-color: #b5b9ad;
   background: #dfe1d9;
 }
 
-.theme-light .setting-row input::after {
+.theme-light .setting-row input[type='checkbox']::after {
   background: #888d81;
 }
 
-.theme-light .setting-row input:checked {
+.theme-light .setting-row input[type='checkbox']:checked {
   border-color: #83994a;
   background: #dfe9bd;
+}
+
+.theme-light .setting-row .setting-number {
+  border-color: #b5b9ad;
+  color: #30342b;
+  background: #fff;
 }
 
 .theme-light .setting-row input:checked::after {

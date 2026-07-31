@@ -1,7 +1,5 @@
 import { useEffect, useRef, useState, type MouseEvent } from 'react'
-import { createTypstRenderer, type RenderSession, type TypstRenderer } from '@myriaddreamin/typst.ts/renderer'
 import { patchRoot } from '@myriaddreamin/typst.ts/render/svg/patch'
-import rendererWasmUrl from '@myriaddreamin/typst-ts-renderer/wasm?url'
 import { createPdfFilename } from '../lib/documents'
 import { reportError } from '../lib/logging'
 import type { EditorDocument, PreviewPosition, PreviewRoot, SourceSyncStatus } from '../types'
@@ -9,16 +7,41 @@ import { PdfToolbar, type PdfZoom } from './PdfToolbar'
 
 const CSS_PIXELS_PER_POINT = 96 / 72
 const PAGE_GAP_POINTS = 10
+const RENDER_BACKOFF_LIMIT_MS = 5_000
+const RAPID_UPDATE_WINDOW_MS = 700
+const MAX_WORKER_RECOVERY_ATTEMPTS = 3
+const VIEWPORT_SETTLE_MS = 160
+const VIEWPORT_OVERSCAN = 2
 const SVG_NAMESPACE = 'http://www.w3.org/2000/svg'
-let rendererPromise: Promise<TypstRenderer> | undefined
+const pageLayoutSignatures = new WeakMap<SVGSVGElement, string>()
 
-function getRenderer() {
-  rendererPromise ??= (async () => {
-    const renderer = createTypstRenderer()
-    await renderer.init({ getModule: () => rendererWasmUrl })
-    return renderer
-  })()
-  return rendererPromise
+interface RenderPageInfo {
+  pageOffset: number
+  width: number
+  height: number
+}
+
+interface RenderMetrics {
+  pages: RenderPageInfo[]
+  docWidth: number
+  docHeight: number
+}
+
+type RendererWorkerMessage = {
+  type: 'ready'
+} | {
+  type: 'result'
+  requestId: number
+  reset: boolean
+  patch: string
+  pages: RenderPageInfo[]
+  docWidth: number
+  docHeight: number
+  renderDurationMs: number
+} | {
+  type: 'error'
+  requestId: number
+  message: string
 }
 
 function splitPreviewPath(value: string) {
@@ -38,7 +61,6 @@ function compactPreviewPath(value: string, maximumLength = 48) {
 }
 
 function decoratePages(svg: SVGSVGElement) {
-  for (const element of svg.querySelectorAll(':scope > .tedit-page-decoration')) element.remove()
   const pages = [...svg.querySelectorAll<SVGGElement>(':scope > g.typst-page')]
   const dimensions = pages.map((page) => ({
     page,
@@ -46,6 +68,10 @@ function decoratePages(svg: SVGSVGElement) {
     height: Number(page.dataset.pageHeight),
   })).filter(({ width, height }) => Number.isFinite(width) && Number.isFinite(height))
   if (!dimensions.length) return
+  const signature = dimensions.map(({ width, height }) => `${width}:${height}`).join(';')
+  if (pageLayoutSignatures.get(svg) === signature) return
+  pageLayoutSignatures.set(svg, signature)
+  for (const element of svg.querySelectorAll(':scope > .tedit-page-decoration')) element.remove()
   const width = Math.max(...dimensions.map((page) => page.width))
   let y = 0
   const firstPage = dimensions[0].page
@@ -98,6 +124,7 @@ export function TypstPreview({
   status,
   showPreviewPosition,
   autoScrollEnabled,
+  renderBackoffMs,
   onPreviewPoint,
 }: {
   document: EditorDocument
@@ -107,12 +134,18 @@ export function TypstPreview({
   status: SourceSyncStatus
   showPreviewPosition: boolean
   autoScrollEnabled: boolean
+  renderBackoffMs: number
   onPreviewPoint(position: PreviewPosition): void
 }) {
+  const normalizedRenderBackoffMs = Number.isFinite(renderBackoffMs)
+    ? Math.max(0, Math.min(RENDER_BACKOFF_LIMIT_MS, Math.round(renderBackoffMs)))
+    : 180
   const [pageNumber, setPageNumber] = useState(1)
   const [pageCount, setPageCount] = useState(0)
   const [zoom, setZoom] = useState<PdfZoom>('width')
   const [renderedVersion, setRenderedVersion] = useState(0)
+  const [workerGeneration, setWorkerGeneration] = useState(0)
+  const [partialRenderingDisabled, setPartialRenderingDisabled] = useState(false)
   const [previewError, setPreviewError] = useState<string>()
   const [printError, setPrintError] = useState<string>()
   const [printing, setPrinting] = useState(false)
@@ -120,25 +153,46 @@ export function TypstPreview({
   const viewportRef = useRef<HTMLDivElement>(null)
   const documentRef = useRef<HTMLDivElement>(null)
   const markerRef = useRef<HTMLDivElement>(null)
-  const sessionRef = useRef<RenderSession | undefined>(undefined)
+  const workerRef = useRef<Worker | undefined>(undefined)
+  const workerReadyRef = useRef(false)
+  const renderMetricsRef = useRef<RenderMetrics | undefined>(undefined)
+  const renderRequestIdRef = useRef(0)
+  const appliedRequestIdRef = useRef(0)
   const updatesRef = useRef<Array<{ kind: 'new' | 'diff-v1'; data: Uint8Array }>>([])
   const processingRef = useRef(false)
-  const releaseSessionRef = useRef<() => void>(() => undefined)
+  const activeRenderKindRef = useRef<'document' | 'viewport' | undefined>(undefined)
+  const updateTimerRef = useRef<number | undefined>(undefined)
+  const updateIdleRef = useRef<number | undefined>(undefined)
+  const scrollFrameRef = useRef<number | undefined>(undefined)
+  const viewportTimerRef = useRef<number | undefined>(undefined)
+  const viewportRenderPendingRef = useRef(false)
+  const lastAutoScrollRef = useRef(0)
+  const refreshOnWorkerStartRef = useRef(false)
+  const awaitingFreshSnapshotRef = useRef(false)
+  const lastDocumentUpdateAtRef = useRef(0)
+  const renderBackoffBaseRef = useRef(normalizedRenderBackoffMs)
+  const renderBackoffRef = useRef(normalizedRenderBackoffMs)
+  const workerRecoveryAttemptsRef = useRef(0)
+  const workerRecoveryTimerRef = useRef<number | undefined>(undefined)
+  const pageElementsRef = useRef<SVGGElement[]>([])
   const pdfFileName = createPdfFilename(document)
   const statusError = status.documentId === document.id && status.state === 'error' ? status.message : undefined
   const effectivePreviewError = previewError ?? statusError
   const visiblePreviewError = printError ?? statusError
   zoomRef.current = zoom
+  if (renderBackoffBaseRef.current !== normalizedRenderBackoffMs) {
+    renderBackoffBaseRef.current = normalizedRenderBackoffMs
+    renderBackoffRef.current = normalizedRenderBackoffMs
+  }
 
-  const applyScaleToSvg = (svg: SVGSVGElement, session: RenderSession, pagesCount: number) => {
+  const applyScaleToSvg = (svg: SVGSVGElement, metrics: RenderMetrics) => {
     const viewport = viewportRef.current
-    if (!viewport || !pagesCount) return
-    const pages = session.retrievePagesInfo()
-    const firstPage = pages[0]
+    if (!viewport || !metrics.pages.length) return
+    const firstPage = metrics.pages[0]
     const availableWidth = Math.max(100, viewport.clientWidth - 20)
     const availableHeight = Math.max(100, viewport.clientHeight - 20)
-    const documentWidth = Number(svg.dataset.width) || session.docWidth
-    const documentHeight = Number(svg.dataset.height) || session.docHeight
+    const documentWidth = Number(svg.dataset.width) || metrics.docWidth
+    const documentHeight = Number(svg.dataset.height) || metrics.docHeight
     const baseWidth = documentWidth * CSS_PIXELS_PER_POINT
     const baseHeight = documentHeight * CSS_PIXELS_PER_POINT
     let scale = availableWidth / baseWidth
@@ -156,19 +210,138 @@ export function TypstPreview({
   }
 
   const applyScale = () => {
-    const session = sessionRef.current
+    const metrics = renderMetricsRef.current
     const svg = documentRef.current?.firstElementChild as SVGSVGElement | null
-    if (session && svg) applyScaleToSvg(svg, session, pageCount)
+    if (metrics && svg) applyScaleToSvg(svg, metrics)
   }
 
-  const processUpdates = () => {
-    if (processingRef.current || !sessionRef.current || !updatesRef.current.length) return
+  const getRenderWindow = () => {
+    const viewport = viewportRef.current
+    const svg = documentRef.current?.firstElementChild as SVGSVGElement | null
+    const pages = pageElementsRef.current
+    if (partialRenderingDisabled || !viewport || !svg || !pages.length || !appliedRequestIdRef.current) {
+      return { lo: { x: 0, y: 0 }, hi: { x: 1e20, y: 1e20 } }
+    }
+    const svgRect = svg.getBoundingClientRect()
+    const viewportRect = viewport.getBoundingClientRect()
+    const documentHeight = Number(svg.dataset.height)
+    const scale = documentHeight > 0 ? svgRect.height / documentHeight : 0
+    if (!scale) return { lo: { x: 0, y: 0 }, hi: { x: 1e20, y: 1e20 } }
+
+    const viewportHeight = viewportRect.height / scale
+    const visibleTop = (viewportRect.top - svgRect.top) / scale
+    const top = visibleTop - viewportHeight * VIEWPORT_OVERSCAN
+    const bottom = visibleTop + viewportHeight * (VIEWPORT_OVERSCAN + 1)
+    let intrinsicY = 0
+    let renderTop = Number.POSITIVE_INFINITY
+    let renderBottom = Number.NEGATIVE_INFINITY
+    for (const page of pages) {
+      const pageY = Number(page.dataset.y)
+      const pageHeight = Number(page.dataset.pageHeight)
+      if (pageY + pageHeight >= top) renderTop = Math.min(renderTop, intrinsicY)
+      if (pageY <= bottom) renderBottom = Math.max(renderBottom, intrinsicY + pageHeight)
+      intrinsicY += pageHeight
+    }
+    if (!Number.isFinite(renderTop) || !Number.isFinite(renderBottom)) {
+      return { lo: { x: 0, y: 0 }, hi: { x: 1e20, y: 1e20 } }
+    }
+    return {
+      lo: { x: 0, y: Math.max(0, renderTop - 1) },
+      hi: { x: 1e20, y: renderBottom + 1 },
+    }
+  }
+
+  const renderViewport = () => {
+    if (!workerReadyRef.current || !workerRef.current) return
+    if (processingRef.current || updatesRef.current.length) {
+      viewportRenderPendingRef.current = true
+      return
+    }
+    viewportRenderPendingRef.current = false
     processingRef.current = true
-    requestAnimationFrame(() => {
-      try {
-        const session = sessionRef.current
-        const container = documentRef.current
-        if (!session || !container) return
+    activeRenderKindRef.current = 'viewport'
+    workerRef.current.postMessage({
+      type: 'render',
+      requestId: ++renderRequestIdRef.current,
+      updates: [],
+      window: getRenderWindow(),
+    })
+  }
+
+  const scheduleViewportRender = () => {
+    window.clearTimeout(viewportTimerRef.current)
+    viewportTimerRef.current = window.setTimeout(() => {
+      viewportTimerRef.current = undefined
+      renderViewport()
+    }, VIEWPORT_SETTLE_MS)
+  }
+
+  const noteDocumentUpdate = () => {
+    const now = performance.now()
+    const elapsed = now - lastDocumentUpdateAtRef.current
+    const baseBackoff = renderBackoffBaseRef.current
+    const maximumBackoff = Math.min(
+      RENDER_BACKOFF_LIMIT_MS,
+      Math.max(baseBackoff, Math.ceil(baseBackoff * 5.5)),
+    )
+    renderBackoffRef.current = elapsed < Math.max(RAPID_UPDATE_WINDOW_MS, baseBackoff)
+      ? Math.min(maximumBackoff, Math.ceil(renderBackoffRef.current * 1.6))
+      : baseBackoff
+    lastDocumentUpdateAtRef.current = now
+    return renderBackoffRef.current
+  }
+
+  const cancelActiveRender = () => {
+    if (!processingRef.current || activeRenderKindRef.current !== 'document') return false
+    workerRef.current?.terminate()
+    workerRef.current = undefined
+    workerReadyRef.current = false
+    processingRef.current = false
+    activeRenderKindRef.current = undefined
+    updatesRef.current = []
+    viewportRenderPendingRef.current = false
+    window.clearTimeout(updateTimerRef.current)
+    updateTimerRef.current = undefined
+    if (updateIdleRef.current !== undefined) window.cancelIdleCallback(updateIdleRef.current)
+    updateIdleRef.current = undefined
+    awaitingFreshSnapshotRef.current = true
+    refreshOnWorkerStartRef.current = true
+    setWorkerGeneration((current) => current + 1)
+    return true
+  }
+
+  const recoverWorker = () => {
+    workerRef.current?.terminate()
+    workerRef.current = undefined
+    workerReadyRef.current = false
+    processingRef.current = false
+    activeRenderKindRef.current = undefined
+    updatesRef.current = []
+    viewportRenderPendingRef.current = false
+    if (workerRecoveryAttemptsRef.current >= MAX_WORKER_RECOVERY_ATTEMPTS) return
+    const delay = Math.min(
+      RENDER_BACKOFF_LIMIT_MS,
+      Math.max(50, renderBackoffBaseRef.current) * (2 ** workerRecoveryAttemptsRef.current),
+    )
+    workerRecoveryAttemptsRef.current += 1
+    refreshOnWorkerStartRef.current = true
+    window.clearTimeout(workerRecoveryTimerRef.current)
+    workerRecoveryTimerRef.current = window.setTimeout(() => {
+      workerRecoveryTimerRef.current = undefined
+      setWorkerGeneration((current) => current + 1)
+    }, delay)
+  }
+
+  const processUpdates = (delay = renderBackoffRef.current) => {
+    if (processingRef.current || !workerReadyRef.current || !workerRef.current || !updatesRef.current.length) return
+    window.clearTimeout(updateTimerRef.current)
+    if (updateIdleRef.current !== undefined) window.cancelIdleCallback(updateIdleRef.current)
+    updateTimerRef.current = window.setTimeout(() => {
+      updateTimerRef.current = undefined
+      const renderUpdates = () => {
+        updateIdleRef.current = undefined
+        processingRef.current = true
+        activeRenderKindRef.current = 'document'
         const updates = updatesRef.current.splice(0)
         let latestNew = -1
         for (let index = updates.length - 1; index >= 0; index -= 1) {
@@ -178,43 +351,19 @@ export function TypstPreview({
           }
         }
         const applicableUpdates = latestNew >= 0 ? updates.slice(latestNew) : updates
-        let replaceDocument = false
-        for (const update of applicableUpdates) {
-          if (update.kind === 'new') {
-            session.reset()
-            replaceDocument = true
-          }
-          session.manipulateData({ action: 'merge', data: update.data })
-        }
-        const patch = session.renderSvgDiff({
-          window: { lo: { x: 0, y: 0 }, hi: { x: 1e20, y: 1e20 } },
-        })
-        const parsed = window.document.createElement('div')
-        parsed.innerHTML = patch
-        const nextSvg = parsed.firstElementChild as SVGSVGElement | null
-        const currentSvg = container.firstElementChild as SVGSVGElement | null
-        if (!nextSvg) throw new Error('Tinymist produced an empty SVG preview.')
-        const nextPageCount = session.retrievePagesInfo().length
-        decoratePages(nextSvg)
-        applyScaleToSvg(nextSvg, session, nextPageCount)
-        if (replaceDocument || !currentSvg) container.replaceChildren(nextSvg)
-        else {
-          patchRoot(currentSvg, nextSvg)
-          decoratePages(currentSvg)
-          applyScaleToSvg(currentSvg, session, nextPageCount)
-        }
-        setPageCount(nextPageCount)
-        setPageNumber((current) => Math.max(1, Math.min(current, nextPageCount || 1)))
-        setPreviewError(undefined)
-        setRenderedVersion((current) => current + 1)
-      } catch (error) {
-        reportError('typst-preview-render', error)
-        setPreviewError(error instanceof Error ? error.message : String(error))
-      } finally {
-        processingRef.current = false
-        if (updatesRef.current.length) processUpdates()
+        const requestId = ++renderRequestIdRef.current
+        workerRef.current?.postMessage({
+          type: 'render',
+          requestId,
+          updates: applicableUpdates,
+          window: getRenderWindow(),
+        }, applicableUpdates.map((update) => update.data.buffer as ArrayBuffer))
       }
-    })
+      if (!delay) renderUpdates()
+      else updateIdleRef.current = window.requestIdleCallback(renderUpdates, {
+        timeout: Math.max(50, renderBackoffBaseRef.current),
+      })
+    }, delay)
   }
 
   useEffect(() => {
@@ -223,47 +372,154 @@ export function TypstPreview({
       setPreviewError('The live preview requires the tedit desktop app.')
       return
     }
-    let cancelled = false
+    const worker = new Worker(new URL('../workers/typstRenderer.worker.ts', import.meta.url), { type: 'module' })
+    workerRef.current = worker
+    worker.onmessage = (event: MessageEvent<RendererWorkerMessage>) => {
+      if (workerRef.current !== worker) return
+      const message = event.data
+      if (message.type === 'ready') {
+        workerReadyRef.current = true
+        processUpdates(
+          appliedRequestIdRef.current || awaitingFreshSnapshotRef.current
+            ? renderBackoffRef.current
+            : 0,
+        )
+        return
+      }
+      if (message.type === 'error') {
+        processingRef.current = false
+        reportError('typst-preview-render', new Error(message.message))
+        setPreviewError(message.message)
+        updatesRef.current = []
+        viewportRenderPendingRef.current = false
+        recoverWorker()
+        return
+      }
+      if (message.requestId < appliedRequestIdRef.current) {
+        processingRef.current = false
+        activeRenderKindRef.current = undefined
+        return
+      }
+      try {
+        const patchStartedAt = performance.now()
+        const container = documentRef.current
+        if (!container) return
+        const parsed = window.document.createElement('div')
+        parsed.innerHTML = message.patch
+        const nextSvg = parsed.firstElementChild as SVGSVGElement | null
+        const currentSvg = container.firstElementChild as SVGSVGElement | null
+        if (!nextSvg) throw new Error('Tinymist produced an empty SVG preview.')
+        const metrics = { pages: message.pages, docWidth: message.docWidth, docHeight: message.docHeight }
+        renderMetricsRef.current = metrics
+        decoratePages(nextSvg)
+        applyScaleToSvg(nextSvg, metrics)
+        let displayedSvg = nextSvg
+        if (message.reset || !currentSvg) container.replaceChildren(nextSvg)
+        else {
+          patchRoot(currentSvg, nextSvg)
+          decoratePages(currentSvg)
+          applyScaleToSvg(currentSvg, metrics)
+          displayedSvg = currentSvg
+        }
+        pageElementsRef.current = [...displayedSvg.querySelectorAll<SVGGElement>(':scope > g.typst-page')]
+        appliedRequestIdRef.current = message.requestId
+        workerRecoveryAttemptsRef.current = 0
+        awaitingFreshSnapshotRef.current = false
+        if (
+          performance.now() - lastDocumentUpdateAtRef.current
+          > Math.max(RAPID_UPDATE_WINDOW_MS, renderBackoffBaseRef.current)
+        ) {
+          renderBackoffRef.current = renderBackoffBaseRef.current
+        }
+        setPageCount(message.pages.length)
+        setPageNumber((current) => Math.max(1, Math.min(current, message.pages.length || 1)))
+        setPreviewError(undefined)
+        setRenderedVersion((current) => current + 1)
+        const patchDurationMs = performance.now() - patchStartedAt
+        if (import.meta.env.DEV && message.renderDurationMs + patchDurationMs > 16) {
+          console.debug('Typst preview update', {
+            renderMs: Math.round(message.renderDurationMs),
+            patchMs: Math.round(patchDurationMs),
+            patchBytes: message.patch.length,
+          })
+        }
+      } catch (error) {
+        reportError('typst-preview-patch', error)
+        setPreviewError(error instanceof Error ? error.message : String(error))
+        setPartialRenderingDisabled(true)
+        recoverWorker()
+      } finally {
+        processingRef.current = false
+        activeRenderKindRef.current = undefined
+        if (updatesRef.current.length) processUpdates()
+        else if (viewportRenderPendingRef.current) renderViewport()
+      }
+    }
+    worker.onerror = (event) => {
+      if (workerRef.current !== worker) return
+      processingRef.current = false
+      activeRenderKindRef.current = undefined
+      const message = event.message || 'The Typst renderer worker stopped unexpectedly.'
+      reportError('typst-preview-worker', new Error(message))
+      setPreviewError(message)
+      recoverWorker()
+    }
     const removeUpdateListener = desktop.onPreviewUpdate((update) => {
       if (update.documentId !== document.id) return
+      const delay = noteDocumentUpdate()
+      if (cancelActiveRender()) return
       if (update.kind === 'new') updatesRef.current = []
-      updatesRef.current.push({ kind: update.kind, data: new Uint8Array(update.data) })
-      processUpdates()
+      updatesRef.current.push({ kind: update.kind, data: update.data })
+      const initialSnapshot = update.kind === 'new'
+        && !appliedRequestIdRef.current
+        && !awaitingFreshSnapshotRef.current
+      processUpdates(initialSnapshot ? 0 : delay)
     })
-    void getRenderer().then((renderer) => renderer.runWithSession(async (session) => {
-      if (cancelled) return
-      sessionRef.current = session
-      processUpdates()
-      await new Promise<void>((resolve) => {
-        releaseSessionRef.current = resolve
-      })
-    })).catch((error) => {
-      reportError('typst-preview-init', error)
-      setPreviewError(error instanceof Error ? error.message : String(error))
-    })
-    return () => {
-      cancelled = true
-      removeUpdateListener()
-      releaseSessionRef.current()
-      releaseSessionRef.current = () => undefined
-      sessionRef.current = undefined
-      updatesRef.current = []
+    if (refreshOnWorkerStartRef.current) {
+      refreshOnWorkerStartRef.current = false
+      desktop.refreshSourceSync({ documentId: document.id })
     }
-  }, [document.id])
+    return () => {
+      removeUpdateListener()
+      worker.terminate()
+      workerRef.current = undefined
+      workerReadyRef.current = false
+      renderMetricsRef.current = undefined
+      processingRef.current = false
+      activeRenderKindRef.current = undefined
+      updatesRef.current = []
+      pageElementsRef.current = []
+      window.clearTimeout(updateTimerRef.current)
+      updateTimerRef.current = undefined
+      if (updateIdleRef.current !== undefined) window.cancelIdleCallback(updateIdleRef.current)
+      updateIdleRef.current = undefined
+      if (scrollFrameRef.current !== undefined) cancelAnimationFrame(scrollFrameRef.current)
+      scrollFrameRef.current = undefined
+      window.clearTimeout(viewportTimerRef.current)
+      viewportTimerRef.current = undefined
+      viewportRenderPendingRef.current = false
+      window.clearTimeout(workerRecoveryTimerRef.current)
+      workerRecoveryTimerRef.current = undefined
+    }
+  }, [document.id, workerGeneration])
 
   useEffect(() => {
     applyScale()
-  }, [zoom, pageCount, renderedVersion])
+    scheduleViewportRender()
+  }, [zoom, pageCount])
 
   useEffect(() => {
     const viewport = viewportRef.current
     if (!viewport) return
-    const observer = new ResizeObserver(applyScale)
+    const observer = new ResizeObserver(() => {
+      applyScale()
+      scheduleViewportRender()
+    })
     observer.observe(viewport)
     return () => observer.disconnect()
   }, [pageCount, zoom])
 
-  const pageElements = () => [...(documentRef.current?.querySelectorAll<SVGGElement>('g.typst-page') ?? [])]
+  const pageElements = () => pageElementsRef.current
   const changePage = (page: number, behavior: ScrollBehavior = 'smooth') => {
     const nextPage = Math.max(1, Math.min(pageCount || 1, page || 1))
     const target = pageElements()[nextPage - 1]
@@ -291,31 +547,46 @@ export function TypstPreview({
     if (!page) return
     const pageRect = page.getBoundingClientRect()
     const documentRect = documentRef.current!.getBoundingClientRect()
+    const viewportRect = viewport.getBoundingClientRect()
     const pageWidth = Number(page.dataset.pageWidth) || pageRect.width
     const pageHeight = Number(page.dataset.pageHeight) || pageRect.height
+    const targetScrollTop = Math.max(0, viewport.scrollTop + pageRect.top - viewportRect.top
+      + (position.y / pageHeight) * pageRect.height - viewport.clientHeight * 0.35)
     marker.style.left = `${pageRect.left - documentRect.left + (position.x / pageWidth) * pageRect.width}px`
     marker.style.top = `${pageRect.top - documentRect.top + (position.y / pageHeight) * pageRect.height}px`
     marker.classList.toggle('visible', showPreviewPosition)
-    if (autoScrollEnabled) {
+    if (autoScrollEnabled && Math.abs(targetScrollTop - viewport.scrollTop) > 2) {
+      const now = performance.now()
       viewport.scrollTo({
-        top: Math.max(0, viewport.scrollTop + pageRect.top - viewport.getBoundingClientRect().top
-          + (position.y / pageHeight) * pageRect.height - viewport.clientHeight * 0.35),
-        behavior: 'smooth',
+        top: targetScrollTop,
+        behavior: now - lastAutoScrollRef.current < 180 ? 'auto' : 'smooth',
       })
+      lastAutoScrollRef.current = now
       setPageNumber(position.page)
     }
   }, [positions, renderedVersion, zoom, showPreviewPosition, autoScrollEnabled])
 
   const trackVisiblePage = () => {
-    const viewport = viewportRef.current
-    if (!viewport) return
-    const marker = viewport.getBoundingClientRect().top + Math.min(80, viewport.clientHeight * 0.25)
-    let visiblePage = 1
-    for (const [index, page] of pageElements().entries()) {
-      if (page.getBoundingClientRect().top > marker) break
-      visiblePage = index + 1
-    }
-    setPageNumber((current) => current === visiblePage ? current : visiblePage)
+    if (scrollFrameRef.current !== undefined) return
+    scrollFrameRef.current = requestAnimationFrame(() => {
+      scrollFrameRef.current = undefined
+      const viewport = viewportRef.current
+      const svg = documentRef.current?.firstElementChild as SVGSVGElement | null
+      const pages = pageElements()
+      if (!viewport || !svg || !pages.length) return
+      const svgRect = svg.getBoundingClientRect()
+      const documentHeight = Number(svg.dataset.height)
+      if (!svgRect.height || !documentHeight) return
+      const marker = viewport.getBoundingClientRect().top + Math.min(80, viewport.clientHeight * 0.25)
+      const markerY = ((marker - svgRect.top) / svgRect.height) * documentHeight
+      let visiblePage = 1
+      for (const [index, page] of pages.entries()) {
+        if (Number(page.dataset.y) > markerY) break
+        visiblePage = index + 1
+      }
+      setPageNumber((current) => current === visiblePage ? current : visiblePage)
+      scheduleViewportRender()
+    })
   }
 
   const revealSource = (event: MouseEvent<HTMLDivElement>) => {

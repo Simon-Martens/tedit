@@ -33,9 +33,6 @@ const trustedWebContentsIds = new Set()
 installProcessFailureLogging()
 registerDocumentationScheme(protocol)
 
-// PDFium text rendering is unreliable with Electron's Vulkan path on Wayland.
-if (process.platform === 'linux') app.commandLine.appendSwitch('disable-features', 'Vulkan')
-
 const { handleIpc, onIpc } = createIpcSecurity({ appEntryUrl, ipcMain, trustedWebContentsIds })
 const registry = createDocumentRegistry()
 const sendToWindows = (channel, payload) => {

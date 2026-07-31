@@ -47,7 +47,8 @@ contextBridge.exposeInMainWorld('typstDesktop', {
   updateSourceSync: (request) => ipcRenderer.send('tinymist:update', request),
   locateSource: (request) => ipcRenderer.send('tinymist:locate', request),
   revealPreviewSource: (request) => ipcRenderer.send('tinymist:reveal-source', request),
-  stopSourceSync: () => ipcRenderer.send('tinymist:stop'),
+  refreshSourceSync: (request) => ipcRenderer.send('tinymist:refresh', request),
+  stopSourceSync: (request) => ipcRenderer.send('tinymist:stop', request),
   onSourceJump: (listener) => {
     const handler = (_event, payload) => listener(payload)
     ipcRenderer.on('tinymist:jump', handler)
@@ -77,7 +78,7 @@ contextBridge.exposeInMainWorld('typstDesktop', {
   syncLanguageServerDocuments: (request) => ipcRenderer.invoke('tinymist-lsp:sync-documents', request),
   completeWithLanguageServer: (request) => ipcRenderer.invoke('tinymist-lsp:complete', request),
   compileWithLanguageServer: (request) => ipcRenderer.invoke('tinymist-lsp:compile', request),
-  stopLanguageServer: () => ipcRenderer.send('tinymist-lsp:stop'),
+  stopLanguageServer: (request) => ipcRenderer.send('tinymist-lsp:stop', request),
   onLanguageServerStatus: (listener) => {
     const handler = (_event, payload) => listener(payload)
     ipcRenderer.on('tinymist-lsp:status', handler)

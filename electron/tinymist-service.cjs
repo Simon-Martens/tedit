@@ -68,6 +68,26 @@ class TinymistService {
     return result
   }
 
+  resume({ documentId, filePath, sourceFilePath, source, memoryFiles = [] }) {
+    if (
+      documentId !== this.documentId
+      || path.resolve(filePath) !== this.filePath
+      || path.resolve(sourceFilePath) !== this.sourceFilePath
+      || this.dataSocket?.readyState !== WebSocket.OPEN
+      || this.controlSocket?.readyState !== WebSocket.OPEN
+    ) return false
+    this.update({ documentId, source, memoryFiles })
+    this.dataSocket.send('current')
+    this.status(documentId, 'ready', 'Source synchronization ready.')
+    return true
+  }
+
+  refresh({ documentId }) {
+    if (documentId === this.documentId && this.dataSocket?.readyState === WebSocket.OPEN) {
+      this.dataSocket.send('current')
+    }
+  }
+
   async startNow({ documentId, filePath, sourceFilePath, memoryFiles = [], runtimeBacked = false }) {
     await this.stopNow()
     const generation = ++this.generation
@@ -179,7 +199,16 @@ class TinymistService {
         }
       }
     }
-    if (message.event === 'editorScrollTo' && Array.isArray(message.start) && Array.isArray(message.end)) {
+    if (
+      message.event === 'editorScrollTo'
+      && this.previewRevealRequests > 0
+      && Array.isArray(message.start)
+      && Array.isArray(message.end)
+    ) {
+      this.previewRevealRequests -= 1
+      if (this.previewRevealRequests > 0) return
+      clearTimeout(this.previewRevealTimer)
+      this.previewRevealTimer = undefined
       this.sendEvent('tinymist:source-reveal', {
         documentId,
         filePath: this.runtimeBacked ? undefined : message.filepath,
@@ -200,7 +229,7 @@ class TinymistService {
       this.sendEvent('tinymist:preview-update', {
         documentId,
         kind: event,
-        data: Uint8Array.from(buffer.subarray(comma + 1)),
+        data: new Uint8Array(buffer.buffer, buffer.byteOffset + comma + 1, buffer.length - comma - 1),
       })
       return
     }
@@ -242,6 +271,12 @@ class TinymistService {
       || !Number.isFinite(x)
       || !Number.isFinite(y)
     ) return
+    this.previewRevealRequests = (this.previewRevealRequests ?? 0) + 1
+    clearTimeout(this.previewRevealTimer)
+    this.previewRevealTimer = setTimeout(() => {
+      this.previewRevealRequests = 0
+      this.previewRevealTimer = undefined
+    }, 2_000)
     this.dataSocket.send(`src-point ${JSON.stringify({ page_no: page, x, y })}`)
   }
 
@@ -287,6 +322,9 @@ class TinymistService {
     this.locateSettleTimer = undefined
     clearTimeout(this.memoryUpdateSettleTimer)
     this.memoryUpdateSettleTimer = undefined
+    clearTimeout(this.previewRevealTimer)
+    this.previewRevealTimer = undefined
+    this.previewRevealRequests = 0
     this.memoryUpdatePending = false
     const child = this.child
     this.child = undefined
@@ -310,6 +348,9 @@ class TinymistService {
     this.locateSettleTimer = undefined
     clearTimeout(this.memoryUpdateSettleTimer)
     this.memoryUpdateSettleTimer = undefined
+    clearTimeout(this.previewRevealTimer)
+    this.previewRevealTimer = undefined
+    this.previewRevealRequests = 0
     this.latestLocate = undefined
     const child = this.child
     const runtimeSourceFilePath = this.runtimeBacked ? this.sourceFilePath : undefined

@@ -143,6 +143,8 @@ function App() {
         onErrorHighlightingEnabledChange={settings.changeErrorHighlightingEnabled}
         automaticErrorPopupEnabled={settings.automaticErrorPopupEnabled}
         onAutomaticErrorPopupEnabledChange={settings.changeAutomaticErrorPopupEnabled}
+        previewRenderBackoffMs={settings.previewRenderBackoffMs}
+        onPreviewRenderBackoffMsChange={settings.changePreviewRenderBackoffMs}
       />
       <TabBar
         documents={editor.documents}
@@ -172,6 +174,7 @@ function App() {
           foldingEnabled={settings.foldingEnabled}
           autocompleteEnabled={settings.autocompleteEnabled}
           errorHighlightingEnabled={settings.errorHighlightingEnabled}
+          previewRenderBackoffMs={settings.previewRenderBackoffMs}
           compilationOpen={compilation.open}
           onSave={() => void files.saveFile()}
           onDeleteFile={() => void deleteActiveDocument()}

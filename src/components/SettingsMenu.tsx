@@ -18,6 +18,8 @@ export function SettingsMenu({
   onErrorHighlightingEnabledChange,
   automaticErrorPopupEnabled,
   onAutomaticErrorPopupEnabledChange,
+  previewRenderBackoffMs,
+  onPreviewRenderBackoffMsChange,
 }: {
   vimEnabled: boolean
   onVimEnabledChange(enabled: boolean): void
@@ -35,6 +37,8 @@ export function SettingsMenu({
   onErrorHighlightingEnabledChange(enabled: boolean): void
   automaticErrorPopupEnabled: boolean
   onAutomaticErrorPopupEnabledChange(enabled: boolean): void
+  previewRenderBackoffMs: number
+  onPreviewRenderBackoffMsChange(value: number): void
 }) {
   const [open, setOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -79,6 +83,25 @@ export function SettingsMenu({
               type="checkbox"
               checked={lightThemeEnabled}
               onChange={(event) => onLightThemeEnabledChange(event.target.checked)}
+            />
+          </label>
+          <label className="setting-row">
+            <span>
+              <strong>Preview backoff</strong>
+              <small>Wait after edits before rendering (ms)</small>
+            </span>
+            <input
+              className="setting-number"
+              type="number"
+              min={0}
+              max={5000}
+              step={50}
+              value={previewRenderBackoffMs}
+              onChange={(event) => {
+                if (Number.isFinite(event.target.valueAsNumber)) {
+                  onPreviewRenderBackoffMsChange(event.target.valueAsNumber)
+                }
+              }}
             />
           </label>
           <label className="setting-row">

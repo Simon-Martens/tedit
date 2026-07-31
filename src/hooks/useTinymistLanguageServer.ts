@@ -7,6 +7,8 @@ import type {
 import { reportError } from '../lib/logging'
 import { toLanguageServerDocuments } from '../lib/languageServerDocuments'
 
+const DOCUMENT_SYNC_SETTLE_MS = 40
+
 const DISABLED_STATUS: LanguageServerStatus = {
   documentId: '',
   state: 'disabled',
@@ -57,11 +59,6 @@ export function useTinymistLanguageServer(
     }
 
     const documentId = document.id
-    updateRef.current(documentId, {
-      languageServerDiagnostics: undefined,
-      languageServerDiagnosticsSourceVersion: undefined,
-      languageServerDiagnosticsClientVersion: undefined,
-    })
     setStatus({ documentId, state: 'starting', message: 'Starting Tinymist language server...' })
     const removeStatusListener = desktop.onLanguageServerStatus((nextStatus) => {
       if (nextStatus.documentId !== documentId) return
@@ -75,12 +72,6 @@ export function useTinymistLanguageServer(
         })
       } else if (nextStatus.state === 'ready') {
         failedRevisionRef.current = undefined
-        const current = documentRef.current
-        if (current?.id === documentId) {
-          updateRef.current(documentId, {
-            dependencyRevision: current.dependencyRevision + 1,
-          })
-        }
       }
     })
     const removeDiagnosticsListener = desktop.onLanguageServerDiagnostics((update) => {
@@ -140,12 +131,7 @@ export function useTinymistLanguageServer(
       removeSourceDependencyListener()
       window.clearTimeout(dependencyRestartTimerRef.current)
       dependencyRestartTimerRef.current = undefined
-      desktop.stopLanguageServer()
-      updateRef.current(documentId, {
-        languageServerDiagnostics: undefined,
-        languageServerDiagnosticsSourceVersion: undefined,
-        languageServerDiagnosticsClientVersion: undefined,
-      })
+      desktop.stopLanguageServer({ documentId })
     }
   }, [document?.id, document?.filePath, document?.previewRootPath, retryGeneration])
 
@@ -164,10 +150,13 @@ export function useTinymistLanguageServer(
       setRetryGeneration((current) => current + 1)
       return
     }
-    void window.typstDesktop.syncLanguageServerDocuments({
-      documentId: document.id,
-      openDocuments,
-    }).catch((error) => reportError('tinymist-document-sync', error))
+    const timeout = window.setTimeout(() => {
+      void window.typstDesktop?.syncLanguageServerDocuments({
+        documentId: document.id,
+        openDocuments,
+      }).catch((error) => reportError('tinymist-document-sync', error))
+    }, DOCUMENT_SYNC_SETTLE_MS)
+    return () => window.clearTimeout(timeout)
   }, [document?.id, document?.filePath, openDocumentsKey, status.documentId, status.state])
 
   return {

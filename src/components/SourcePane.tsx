@@ -24,6 +24,7 @@ interface VimClipboardApi {
 }
 
 let fallbackClipboard = ''
+const textEncoder = new TextEncoder()
 
 function createClipboardRegister(): VimRegister {
   let lastWrittenText = ''
@@ -78,7 +79,7 @@ function findRenderableOffset(text: string, preferredOffset: number) {
           ? candidate
           : closest
       ))
-      return new TextEncoder().encode(text.slice(0, bodyStart + (bodyCharacter.index ?? 0))).length
+      return textEncoder.encode(text.slice(0, bodyStart + (bodyCharacter.index ?? 0))).length
     }
   }
 
@@ -90,7 +91,7 @@ function findRenderableOffset(text: string, preferredOffset: number) {
       ? candidate
       : closest
   ))
-  return new TextEncoder().encode(text.slice(0, nearest.index)).length
+  return textEncoder.encode(text.slice(0, nearest.index)).length
 }
 
 export function SourcePane({
@@ -154,6 +155,11 @@ export function SourcePane({
   const historyListenerRef = useRef<{ dispose(): void } | null>(null)
   const findActionRef = useRef<{ dispose(): void } | null>(null)
   const completionProviderRef = useRef<{ dispose(): void } | null>(null)
+  const cursorFrameRef = useRef<number | undefined>(undefined)
+  const pendingCursorRef = useRef<{ lineNumber: number; column: number } | undefined>(undefined)
+  const pendingSourceRef = useRef<string | undefined>(undefined)
+  const applyingExternalSourceRef = useRef(false)
+  const lastEditAtRef = useRef(0)
   const documentRef = useRef(document)
   const languageServerDocumentsRef = useRef(languageServerDocuments)
   const initiallyCollapsedModelsRef = useRef(new Set<string>())
@@ -187,6 +193,7 @@ export function SourcePane({
       !editor
       || !sourceReveal
       || (sourceReveal.filePath && sourceReveal.filePath !== document.filePath)
+      || performance.now() - lastEditAtRef.current < 500
     ) return
     const selection = {
       startLineNumber: sourceReveal.start.line + 1,
@@ -198,6 +205,44 @@ export function SourcePane({
     editor.revealRangeInCenter(selection)
     editor.focus()
   }, [document.filePath, sourceReveal])
+
+  const syncExternalSource = (editor = editorRef.current) => {
+    const monaco = monacoRef.current
+    const model = editor?.getModel()
+    if (!editor || !monaco || !model) return
+    const currentDocument = documentRef.current
+    const expectedUri = monaco.Uri.parse(`tedit://${currentDocument.id}.typ`).toString()
+    if (model.uri.toString() !== expectedUri) return
+    if (pendingSourceRef.current !== undefined) {
+      if (pendingSourceRef.current !== currentDocument.source) return
+      pendingSourceRef.current = undefined
+    }
+    if (model.getValue() === currentDocument.source) return
+
+    const selections = editor.getSelections()
+    const scrollTop = editor.getScrollTop()
+    const scrollLeft = editor.getScrollLeft()
+    applyingExternalSourceRef.current = true
+    model.setValue(currentDocument.source)
+    applyingExternalSourceRef.current = false
+    if (selections) {
+      editor.setSelections(selections.map((selection) => {
+        const selectionStartLineNumber = Math.min(model.getLineCount(), selection.selectionStartLineNumber)
+        const positionLineNumber = Math.min(model.getLineCount(), selection.positionLineNumber)
+        return new monaco.Selection(
+          selectionStartLineNumber,
+          Math.min(model.getLineMaxColumn(selectionStartLineNumber), selection.selectionStartColumn),
+          positionLineNumber,
+          Math.min(model.getLineMaxColumn(positionLineNumber), selection.positionColumn),
+        )
+      }))
+    }
+    editor.setScrollPosition({ scrollTop, scrollLeft })
+  }
+
+  useLayoutEffect(() => {
+    syncExternalSource()
+  }, [document.id, document.sourceRevision])
 
   const initializeVim = (editor: Parameters<OnMount>[0]) => {
     vimAdapterRef.current?.dispose()
@@ -386,6 +431,7 @@ export function SourcePane({
       historyListenerRef.current?.dispose()
       findActionRef.current?.dispose()
       completionProviderRef.current?.dispose()
+      if (cursorFrameRef.current !== undefined) cancelAnimationFrame(cursorFrameRef.current)
       const model = editorRef.current?.getModel()
       if (model) monacoRef.current?.editor.setModelMarkers(model, 'typst', [])
     }
@@ -589,6 +635,8 @@ export function SourcePane({
             }
             modelListenerRef.current?.dispose()
             modelListenerRef.current = editor.onDidChangeModel(() => {
+              pendingSourceRef.current = undefined
+              syncExternalSource(editor)
               collapseInitialModel()
               applyDiagnostics(editor)
               updateHistoryAvailability(editor)
@@ -606,32 +654,39 @@ export function SourcePane({
               const model = editor.getModel()
               if (!model) return
               cursorPositionCallbackRef.current(position.lineNumber, position.column)
-              const currentLine = position.lineNumber
-              for (let distance = 0; distance < model.getLineCount(); distance += 1) {
-                const lineNumbers = distance === 0
-                  ? [currentLine]
-                  : [currentLine - distance, currentLine + distance]
-                for (const lineNumber of lineNumbers) {
+              const text = model.getLineContent(position.lineNumber)
+              const cursorCharacter = textEncoder.encode(text.slice(0, position.column - 1)).length
+              let lookup = findRenderableOffset(text, Math.max(0, position.column - 2))
+              let lookupLine = position.lineNumber
+              for (let distance = 1; lookup === undefined && distance <= 2; distance += 1) {
+                for (const lineNumber of [position.lineNumber - distance, position.lineNumber + distance]) {
                   if (lineNumber < 1 || lineNumber > model.getLineCount()) continue
-                  const text = model.getLineContent(lineNumber)
-                  const preferredOffset = lineNumber === currentLine
-                    ? Math.max(0, position.column - 2)
-                    : text.length / 2
-                  const character = findRenderableOffset(text, preferredOffset)
-                  if (character === undefined) continue
-                  const cursorText = model.getLineContent(currentLine)
-                  cursorCallbackRef.current({
-                    cursor: {
-                      line: currentLine - 1,
-                      character: new TextEncoder().encode(cursorText.slice(0, position.column - 1)).length,
-                    },
-                    lookup: { line: lineNumber - 1, character },
-                  })
-                  return
+                  const nearbyText = model.getLineContent(lineNumber)
+                  lookup = findRenderableOffset(nearbyText, nearbyText.length / 2)
+                  if (lookup !== undefined) {
+                    lookupLine = lineNumber
+                    break
+                  }
                 }
               }
+              cursorCallbackRef.current({
+                cursor: { line: position.lineNumber - 1, character: cursorCharacter },
+                lookup: {
+                  line: lookupLine - 1,
+                  character: lookup ?? cursorCharacter,
+                },
+              })
             }
-            cursorListenerRef.current = editor.onDidChangeCursorPosition(({ position }) => reportPosition(position))
+            const schedulePosition = (position: { lineNumber: number; column: number }) => {
+              pendingCursorRef.current = position
+              if (cursorFrameRef.current !== undefined) return
+              cursorFrameRef.current = requestAnimationFrame(() => {
+                cursorFrameRef.current = undefined
+                const pending = pendingCursorRef.current
+                if (pending) reportPosition(pending)
+              })
+            }
+            cursorListenerRef.current = editor.onDidChangeCursorPosition(({ position }) => schedulePosition(position))
             mouseListenerRef.current = editor.onMouseDown(({ target }) => {
               const clickedPosition = target.position
               const currentPosition = editor.getPosition()
@@ -640,16 +695,22 @@ export function SourcePane({
                 && currentPosition
                 && clickedPosition.lineNumber === currentPosition.lineNumber
                 && clickedPosition.column === currentPosition.column
-              ) reportPosition(clickedPosition)
+              ) schedulePosition(clickedPosition)
             })
             const initialPosition = editor.getPosition()
-            if (initialPosition) reportPosition(initialPosition)
+            if (initialPosition) schedulePosition(initialPosition)
           }}
           beforeMount={configureTypstLanguage}
           language="typst"
           path={`tedit://${document.id}.typ`}
-          value={document.source}
-          onChange={(value) => onChange(value ?? '')}
+          defaultValue={document.source}
+          onChange={(value) => {
+            if (applyingExternalSourceRef.current) return
+            const source = value ?? ''
+            pendingSourceRef.current = source
+            lastEditAtRef.current = performance.now()
+            onChange(source)
+          }}
           theme={lightThemeEnabled ? 'vs' : 'vs-dark'}
           loading={<div className="editor-loading">Loading Monaco editor...</div>}
           options={{

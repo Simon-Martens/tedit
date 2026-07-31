@@ -107,7 +107,7 @@ export function useTypstCompilation(
           })
         }
       })()
-    }, 20)
+    }, 1_000)
 
     return () => {
       window.clearTimeout(timeout)

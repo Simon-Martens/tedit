@@ -67,6 +67,20 @@ class TinymistLspService {
     return result
   }
 
+  async resume(request) {
+    if (
+      request.documentId !== this.documentId
+      || path.resolve(request.filePath) !== this.filePath
+      || path.resolve(request.activeFilePath) !== this.activeFilePath
+      || !this.connection
+      || !this.open
+    ) return false
+    this.activeVersion = request.activeVersion
+    await this.syncDocuments(request)
+    this.status(request.documentId, 'ready', 'Tinymist language server ready.')
+    return true
+  }
+
   async startNow({
     documentId,
     filePath,

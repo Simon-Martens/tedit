@@ -6,6 +6,7 @@ const DISABLED_STATUS: SourceSyncStatus = {
   state: 'disabled',
   message: 'The live preview requires the tedit desktop app.',
 }
+const SOURCE_UPDATE_SETTLE_MS = 40
 
 export function useSourcePreviewSync(
   document: EditorDocument | undefined,
@@ -17,6 +18,8 @@ export function useSourcePreviewSync(
   const [sourceReveal, setSourceReveal] = useState<PreviewSourceReveal>()
   const [status, setStatus] = useState<SourceSyncStatus>(DISABLED_STATUS)
   const lastLocationRef = useRef<SourceCursorLocation | undefined>(undefined)
+  const pendingLocationRef = useRef<SourceCursorLocation | undefined>(undefined)
+  const locateFrameRef = useRef<number | undefined>(undefined)
   const requestIdRef = useRef(0)
   const memoryFiles = documents.flatMap((openDocument) => openDocument.filePath ? [{
     filePath: openDocument.filePath,
@@ -82,13 +85,19 @@ export function useSourcePreviewSync(
       removeJumpListener()
       removeStatusListener()
       removeSourceRevealListener()
-      desktop.stopSourceSync()
+      if (locateFrameRef.current !== undefined) cancelAnimationFrame(locateFrameRef.current)
+      locateFrameRef.current = undefined
+      pendingLocationRef.current = undefined
+      desktop.stopSourceSync({ documentId: document.id })
     }
   }, [document?.id, document?.filePath, previewFilePath, enabled])
 
   useEffect(() => {
     if (!window.typstDesktop || !document) return
-    window.typstDesktop.updateSourceSync({ documentId: document.id, source: document.source, memoryFiles })
+    const timeout = window.setTimeout(() => {
+      window.typstDesktop?.updateSourceSync({ documentId: document.id, source: document.source, memoryFiles })
+    }, SOURCE_UPDATE_SETTLE_MS)
+    return () => window.clearTimeout(timeout)
   }, [document?.id, document?.sourceRevision, memoryFilesKey])
 
   useEffect(() => {
@@ -113,15 +122,18 @@ export function useSourcePreviewSync(
   const locate = (location: SourceCursorLocation) => {
     if (!enabled) return
     lastLocationRef.current = location
+    pendingLocationRef.current = location
     requestIdRef.current += 1
-    setPositions([])
-    setSourceCursorLocation(location)
-    if (!window.typstDesktop || !canLocate || !document) return
-    if (!canLocateRef.current) return
-    window.typstDesktop.locateSource({
-      documentId: document.id,
-      requestId: requestIdRef.current,
-      ...location.lookup,
+    if (locateFrameRef.current !== undefined) return
+    locateFrameRef.current = requestAnimationFrame(() => {
+      locateFrameRef.current = undefined
+      const pending = pendingLocationRef.current
+      if (!pending || !window.typstDesktop || !canLocateRef.current || !document) return
+      window.typstDesktop.locateSource({
+        documentId: document.id,
+        requestId: requestIdRef.current,
+        ...pending.lookup,
+      })
     })
   }
 
