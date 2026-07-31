@@ -170,5 +170,22 @@ export function useFileCommands(editor: EditorDocumentsController) {
     })
   }
 
-  return { fileInputRef, loadBrowserFile, openFile, saveFile, saveDesktopDocument }
+  const deleteFile = async (document: EditorDocument) => {
+    const desktop = window.typstDesktop
+    if (!desktop || !document.filePath || !document.diskVersion) return false
+    try {
+      return await desktop.deleteDocument({
+        filePath: document.filePath,
+        expectedDiskVersion: document.diskVersion,
+      })
+    } catch (error) {
+      editor.updateDocument(document.id, {
+        compileState: 'error',
+        messages: [`Could not delete file: ${formatError(error)}`],
+      })
+      return false
+    }
+  }
+
+  return { fileInputRef, loadBrowserFile, openFile, saveFile, saveDesktopDocument, deleteFile }
 }

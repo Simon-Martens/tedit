@@ -1,4 +1,4 @@
-const { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, net, protocol, session } = require('electron')
+const { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, net, protocol, session, shell } = require('electron')
 const path = require('node:path')
 const { pathToFileURL } = require('node:url')
 const { createBibliographyIpc } = require('./bibliography-ipc.cjs')
@@ -82,7 +82,7 @@ const windowLifecycle = createWindowLifecycle({
   trustedWebContentsIds,
 })
 
-createDocumentFileIpc({ BrowserWindow, dialog, handleIpc, registry })
+createDocumentFileIpc({ BrowserWindow, dialog, handleIpc, registry, shell })
 registerDocumentWatchIpc({ handleIpc, watcher })
 
 onIpc('clipboard:read', (event) => {

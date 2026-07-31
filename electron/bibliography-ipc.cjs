@@ -387,7 +387,6 @@ function createBibliographyIpc({ handleIpc, isAllowedPreviewRoot, onIpc, registr
   }
 
   handleIpc('bibliography:discover', async (event, request) => {
-    const previousSession = sessions.get(event.sender.id)
     stopForWebContents(event.sender.id)
     if (
       typeof request?.documentId !== 'string'
@@ -396,10 +395,12 @@ function createBibliographyIpc({ handleIpc, isAllowedPreviewRoot, onIpc, registr
       || typeof request.rootFilePath !== 'string'
       || !Array.isArray(request.documents)
       || request.documents.length > maximumDocuments
-      || (request.retainedIds !== undefined && (
-        !Array.isArray(request.retainedIds)
-        || request.retainedIds.length > maximumReferences
-        || request.retainedIds.some((id) => typeof id !== 'string')
+      || (request.retainedFiles !== undefined && (
+        !Array.isArray(request.retainedFiles)
+        || request.retainedFiles.length > maximumReferences
+        || request.retainedFiles.some((file) => (
+          typeof file?.id !== 'string' || typeof file.filePath !== 'string'
+        ))
       ))
     ) throw new Error('Invalid bibliography discovery request.')
     const discoveryGeneration = discoveryGenerations.get(event.sender.id)
@@ -438,6 +439,8 @@ function createBibliographyIpc({ handleIpc, isAllowedPreviewRoot, onIpc, registr
     }
 
     const workspaceRoot = await canonicalWorkspaceRoot(sourceFilePath)
+    const sourceContainingPath = await fs.realpath(sourceFilePath)
+    const defaultBibliography = await resolveTarget(workspaceRoot, sourceContainingPath, 'bibliography.bib')
     const targets = new Map()
     let referenceCount = 0
     for (const document of documents) {
@@ -497,15 +500,45 @@ function createBibliographyIpc({ handleIpc, isAllowedPreviewRoot, onIpc, registr
         exists: entry.exists,
       })
     }
-    const retainedIds = new Set(request.retainedIds ?? [])
-    if (previousSession?.documentId === request.documentId) {
-      for (const [id, entry] of previousSession.entriesById) {
-        if (retainedIds.has(id) && !session.entriesById.has(id)) {
-          entry.saving = false
-          entry.watchGeneration = (entry.watchGeneration ?? 0) + 1
-          session.entriesById.set(id, entry)
-        }
+    for (const retained of request.retainedFiles ?? []) {
+      if (session.entriesById.has(retained.id)) continue
+      if (session.entriesById.size >= maximumReferences) {
+        throw new Error(`Cannot retain more than ${maximumReferences} bibliography files.`)
       }
+      const retainedPath = registry.normalizeDocumentPath(retained.filePath)
+      const expectedId = createHmac('sha256', senderSecret)
+        .update(request.documentId)
+        .update('\0')
+        .update(retainedPath)
+        .digest('base64url')
+      if (retained.id !== expectedId) throw new Error('Invalid retained bibliography identifier.')
+      const reference = path.relative(path.dirname(sourceContainingPath), retainedPath)
+      const target = await resolveTarget(workspaceRoot, sourceContainingPath, reference)
+      if (target.filePath !== retainedPath) throw new Error('Invalid retained bibliography path.')
+      const entry = {
+        id: retained.id,
+        filePath: target.filePath,
+        name: path.basename(target.filePath),
+        exists: target.exists,
+        diskVersion: undefined,
+        saving: false,
+        watchGeneration: 0,
+      }
+      let content = ''
+      if (target.exists) {
+        content = await readLimitedUtf8(target.filePath)
+        entry.diskVersion = registry.contentVersion(content)
+      }
+      session.entriesById.set(entry.id, entry)
+      files.push({
+        id: entry.id,
+        filePath: entry.filePath,
+        name: entry.name,
+        relativePath: path.relative(workspaceRoot, entry.filePath),
+        content,
+        ...(entry.diskVersion === undefined ? {} : { diskVersion: entry.diskVersion }),
+        exists: entry.exists,
+      })
     }
     if (
       discoveryGenerations.get(event.sender.id) !== discoveryGeneration
@@ -519,7 +552,37 @@ function createBibliographyIpc({ handleIpc, isAllowedPreviewRoot, onIpc, registr
       stopForWebContents(event.sender.id)
       throw error
     }
-    return { documentId: request.documentId, files }
+    return {
+      documentId: request.documentId,
+      files,
+      defaultBibliographyExists: defaultBibliography.exists,
+    }
+  })
+
+  handleIpc('bibliography:create-default', async (event, request) => {
+    if (
+      typeof request?.documentId !== 'string'
+      || !/^[A-Za-z0-9-]{1,64}$/.test(request.documentId)
+      || typeof request.sourceFilePath !== 'string'
+    ) throw new Error('Invalid bibliography creation request.')
+    const sourceFilePath = registry.normalizeDocumentPath(request.sourceFilePath)
+    if (!registry.isAllowed(sourceFilePath)) throw new Error('The source document is not authorized.')
+    const workspaceRoot = await canonicalWorkspaceRoot(sourceFilePath)
+    const containingFilePath = await fs.realpath(sourceFilePath)
+    const target = await resolveTarget(workspaceRoot, containingFilePath, 'bibliography.bib')
+    await queueSave(target.filePath, async () => {
+      const senderDestroyed = () => event.sender.isDestroyed?.() ?? false
+      if (senderDestroyed()) throw new Error('Bibliography creation was cancelled.')
+      const checkedTarget = await resolveTarget(workspaceRoot, containingFilePath, 'bibliography.bib')
+      if (checkedTarget.exists) return
+      const handle = await fs.open(checkedTarget.filePath, 'wx', 0o600)
+      await handle.close()
+      if (senderDestroyed()) {
+        await fs.rm(checkedTarget.filePath, { force: true })
+        throw new Error('Bibliography creation was cancelled.')
+      }
+    })
+    return { reference: 'bibliography.bib', filePath: target.filePath }
   })
 
   handleIpc('bibliography:save', async (event, request) => {

@@ -38,6 +38,7 @@ export function Workspace({
   errorHighlightingEnabled,
   compilationOpen,
   onSave,
+  onDeleteFile,
   bibliographies,
   languageServerDocuments,
 }: {
@@ -61,6 +62,7 @@ export function Workspace({
   errorHighlightingEnabled: boolean
   compilationOpen: boolean
   onSave(): void
+  onDeleteFile(): void
   bibliographies: BibliographiesController
   languageServerDocuments: LanguageServerDocument[]
 }) {
@@ -135,6 +137,12 @@ export function Workspace({
             selectedBibliography={bibliographies.selectedFile}
             onSelectBibliography={bibliographies.select}
             onToggleBibliography={bibliographies.toggle}
+            onCreateBibliography={() => void bibliographies.createDefault()}
+            bibliographyCreating={bibliographies.creating}
+            canCreateBibliography={bibliographies.canCreateDefault}
+            defaultBibliographyExists={bibliographies.defaultBibliographyExists}
+            fileActionBusy={bibliographies.isBusy()}
+            onDeleteFile={onDeleteFile}
           />
           {bibliographies.open && bibliographies.selectedFile && (
             <>

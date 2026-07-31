@@ -22,6 +22,7 @@ export function useDesktopRecovery(
   auxiliary?: {
     getDirtyNames(): string[]
     saveAll(): Promise<boolean>
+    waitForIdle?(): Promise<void>
   },
 ) {
   const recoveryTimerRef = useRef<number | undefined>(undefined)
@@ -64,6 +65,7 @@ export function useDesktopRecovery(
         closingRef.current = true
         window.clearTimeout(recoveryTimerRef.current)
         recoveryTimerRef.current = undefined
+        await auxiliaryRef.current?.waitForIdle?.()
         const persistCurrentRecovery = async () => {
           const documents = currentEditor.getDocuments()
           await desktop.saveRecovery({

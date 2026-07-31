@@ -32,6 +32,14 @@ function createDocumentRegistry() {
     workspaceRootsByDocument.set(filePath, path.dirname(filePath))
   }
 
+  function forgetDocument(filePath) {
+    const normalizedPath = normalizeDocumentPath(filePath)
+    allowedDocumentPaths.delete(normalizedPath)
+    diskVersions.delete(normalizedPath)
+    unavailableSessionPaths.delete(normalizedPath)
+    workspaceRootsByDocument.delete(normalizedPath)
+  }
+
   function normalizeLanguageServerDocuments(documents) {
     return (Array.isArray(documents) ? documents : []).flatMap((document) => {
       if (
@@ -58,6 +66,7 @@ function createDocumentRegistry() {
     authorizeRecoveredDocument,
     contentVersion,
     deleteDiskVersion: (filePath) => diskVersions.delete(filePath),
+    forgetDocument,
     getDiskVersion: (filePath) => diskVersions.get(filePath),
     getUnavailableSessionPaths: () => [...unavailableSessionPaths],
     getWorkspaceRoot: (filePath) => workspaceRootsByDocument.get(filePath),

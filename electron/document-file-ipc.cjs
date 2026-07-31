@@ -20,7 +20,7 @@ async function getGitMetadata(filePath) {
   }
 }
 
-function createDocumentFileIpc({ BrowserWindow, dialog, handleIpc, registry }) {
+function createDocumentFileIpc({ BrowserWindow, dialog, handleIpc, registry, shell }) {
   const documentSaveQueues = new Map()
 
   function queueDocumentSave(filePath, save) {
@@ -106,6 +106,50 @@ function createDocumentFileIpc({ BrowserWindow, dialog, handleIpc, registry }) {
         name: path.basename(filePath),
         ...gitMetadata,
       }
+    })
+  })
+
+  handleIpc('document:delete', async (event, request) => {
+    if (
+      typeof request?.filePath !== 'string'
+      || typeof request.expectedDiskVersion !== 'string'
+    ) throw new Error('Invalid document deletion request.')
+    const filePath = registry.normalizeDocumentPath(request.filePath)
+    if (!registry.isAllowed(filePath)) throw new Error('Refusing to delete a file that was not opened by tedit.')
+
+    return queueDocumentSave(filePath, async () => {
+      const inspect = async () => {
+        const stat = await fs.lstat(filePath, { bigint: true })
+        if (stat.isSymbolicLink() || !stat.isFile()) throw new Error('Only regular Typst files can be deleted.')
+        const content = await fs.readFile(filePath, 'utf8')
+        if (registry.contentVersion(content) !== request.expectedDiskVersion) {
+          throw new Error('The file changed on disk. Reload it before deleting.')
+        }
+        return { device: stat.dev, inode: stat.ino }
+      }
+      const identity = await inspect()
+      const owner = BrowserWindow.fromWebContents(event.sender)
+      const options = {
+        type: 'warning',
+        title: 'Delete Typst file',
+        message: `Move ${path.basename(filePath)} to the trash?`,
+        detail: 'Unsaved source and bibliography changes will be discarded.',
+        buttons: ['Cancel', 'Move to Trash'],
+        defaultId: 0,
+        cancelId: 0,
+        noLink: true,
+      }
+      const result = owner
+        ? await dialog.showMessageBox(owner, options)
+        : await dialog.showMessageBox(options)
+      if (result.response !== 1) return false
+      const confirmedIdentity = await inspect()
+      if (confirmedIdentity.device !== identity.device || confirmedIdentity.inode !== identity.inode) {
+        throw new Error('The file was replaced while deletion was being confirmed.')
+      }
+      await shell.trashItem(filePath)
+      registry.forgetDocument(filePath)
+      return true
     })
   })
 

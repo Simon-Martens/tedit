@@ -112,6 +112,12 @@ export function SourcePane({
   selectedBibliography,
   onSelectBibliography,
   onToggleBibliography,
+  onCreateBibliography,
+  bibliographyCreating,
+  canCreateBibliography,
+  defaultBibliographyExists,
+  fileActionBusy,
+  onDeleteFile,
 }: {
   document: EditorDocument
   onChange(value: string): void
@@ -131,6 +137,12 @@ export function SourcePane({
   selectedBibliography?: BibliographyBuffer
   onSelectBibliography(id: string): void
   onToggleBibliography(): void
+  onCreateBibliography(): void
+  bibliographyCreating: boolean
+  canCreateBibliography: boolean
+  defaultBibliographyExists: boolean
+  fileActionBusy: boolean
+  onDeleteFile(): void
 }) {
   const editorRef = useRef<Parameters<OnMount>[0] | null>(null)
   const monacoRef = useRef<Parameters<OnMount>[1] | null>(null)
@@ -384,6 +396,18 @@ export function SourcePane({
       <div className="panel-heading source-heading">
         <span className="source-title">Source</span>
           <span className="source-actions">
+            {canCreateBibliography && (
+              <button
+                type="button"
+                className="source-search"
+                title={`${defaultBibliographyExists ? 'Embed' : 'Create and embed'} bibliography.bib`}
+                aria-label={`${defaultBibliographyExists ? 'Embed' : 'Create and embed'} bibliography.bib`}
+                disabled={bibliographyCreating}
+                onClick={onCreateBibliography}
+              >
+                <Icon name="bibliography" />
+              </button>
+            )}
             {bibliographies.length === 1 && (
               <button
                 type="button"
@@ -472,6 +496,18 @@ export function SourcePane({
           >
             <Icon name="replace" />
           </button>
+          {document.filePath && document.diskVersion && (
+            <button
+              type="button"
+              className="source-search"
+              title={`Delete ${document.fileName}`}
+              aria-label={`Delete ${document.fileName}`}
+              disabled={fileActionBusy}
+              onClick={onDeleteFile}
+            >
+              <Icon name="trash" />
+            </button>
+          )}
         </span>
       </div>
       <div className="editor-wrap">

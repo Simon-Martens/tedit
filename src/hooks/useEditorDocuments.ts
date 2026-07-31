@@ -10,6 +10,7 @@ export interface EditorDocumentsController {
   activateDocument(id: string): void
   addDocument(document: EditorDocument): void
   closeDocument(id: string, beforeClose?: () => boolean): void
+  removeDocument(id: string): void
   reorderDocuments(draggedId: string, targetId: string, after: boolean): void
   updateDocument(id: string, update: Partial<EditorDocument>): void
   transformDocuments(transform: (documents: EditorDocument[]) => EditorDocument[]): void
@@ -119,6 +120,22 @@ export function useEditorDocuments(): EditorDocumentsController {
     if (id === activeId) setActiveId(remaining[Math.min(index, remaining.length - 1)].id)
   }
 
+  const removeDocument = (id: string) => {
+    const current = documentsRef.current
+    const index = current.findIndex((document) => document.id === id)
+    const removed = current[index]
+    if (!removed) return
+    if (removed.pdfUrl) URL.revokeObjectURL(removed.pdfUrl)
+    const remaining = current.filter((document) => document.id !== id)
+    documentsRef.current = remaining
+    setDocuments(remaining)
+    if (activeIdRef.current === id) {
+      const nextId = remaining[Math.min(index, remaining.length - 1)]?.id ?? ''
+      activeIdRef.current = nextId
+      setActiveId(nextId)
+    }
+  }
+
   const reorderDocuments = (draggedId: string, targetId: string, after: boolean) => {
     setDocuments((current) => {
       const draggedIndex = current.findIndex(({ id }) => id === draggedId)
@@ -160,6 +177,7 @@ export function useEditorDocuments(): EditorDocumentsController {
     changePreviewRoot,
     addDocument,
     closeDocument,
+    removeDocument,
     reorderDocuments,
   }
 }

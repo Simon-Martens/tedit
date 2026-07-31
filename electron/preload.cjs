@@ -3,6 +3,7 @@ const { contextBridge, ipcRenderer } = require('electron')
 contextBridge.exposeInMainWorld('typstDesktop', {
   openDocument: () => ipcRenderer.invoke('document:open'),
   saveDocument: (request) => ipcRenderer.invoke('document:save', request),
+  deleteDocument: (request) => ipcRenderer.invoke('document:delete', request),
   printPdf: (pdf) => ipcRenderer.invoke('pdf:print', pdf),
   watchDocuments: (filePaths) => ipcRenderer.invoke('document:watch', filePaths),
   onDocumentWatchStatus: (listener) => {
@@ -17,6 +18,7 @@ contextBridge.exposeInMainWorld('typstDesktop', {
   },
   resolveDocumentConflict: (request) => ipcRenderer.invoke('document:resolve-conflict', request),
   discoverBibliographies: (request) => ipcRenderer.invoke('bibliography:discover', request),
+  createDefaultBibliography: (request) => ipcRenderer.invoke('bibliography:create-default', request),
   saveBibliography: (request) => ipcRenderer.invoke('bibliography:save', request),
   onBibliographyChange: (listener) => {
     const handler = (_event, payload) => listener(payload)

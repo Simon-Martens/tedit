@@ -4,6 +4,7 @@ import type { BibliographyChange, BibliographyConflict, BibliographyFile } from 
 import type { EditorDocumentsController } from './useEditorDocuments'
 
 export interface BibliographyBuffer extends BibliographyFile {
+  documentId: string
   savedContent: string
   isDirty: boolean
 }
@@ -13,6 +14,9 @@ export interface BibliographiesController {
   selectedFile?: BibliographyBuffer
   open: boolean
   saving: boolean
+  creating: boolean
+  canCreateDefault: boolean
+  defaultBibliographyExists: boolean
   select(id: string): void
   toggle(): void
   close(): void
@@ -22,10 +26,14 @@ export interface BibliographiesController {
   changeContent(content: string): void
   save(): Promise<boolean>
   saveAll(): Promise<boolean>
+  createDefault(): Promise<void>
+  discardDocument(documentId: string): void
+  isBusy(): boolean
+  waitForIdle(): Promise<void>
 }
 
-function toBuffer(file: BibliographyFile): BibliographyBuffer {
-  return { ...file, savedContent: file.content, isDirty: false }
+function toBuffer(file: BibliographyFile, documentId: string): BibliographyBuffer {
+  return { ...file, documentId, savedContent: file.content, isDirty: false }
 }
 
 export function useBibliographies(editor: EditorDocumentsController): BibliographiesController {
@@ -34,6 +42,9 @@ export function useBibliographies(editor: EditorDocumentsController): Bibliograp
   const [selectedId, setSelectedId] = useState('')
   const [open, setOpen] = useState(false)
   const [savingIds, setSavingIds] = useState<Set<string>>(() => new Set())
+  const [creating, setCreating] = useState(false)
+  const [discoveryReady, setDiscoveryReady] = useState(false)
+  const [defaultBibliographyExists, setDefaultBibliographyExists] = useState(false)
   const filesRef = useRef(files)
   const dirtyBuffersRef = useRef(new Map<string, BibliographyBuffer>())
   const activeDocumentRef = useRef(activeDocument)
@@ -42,6 +53,8 @@ export function useBibliographies(editor: EditorDocumentsController): Bibliograp
   const requestRef = useRef(0)
   const conflictQueueRef = useRef(Promise.resolve())
   const savingIdsRef = useRef(new Set<string>())
+  const pendingOpenRef = useRef<{ documentId: string; filePath: string } | undefined>(undefined)
+  const creatingDocumentRef = useRef('')
   filesRef.current = files
   for (const file of files) {
     if (file.isDirty) dirtyBuffersRef.current.set(file.filePath, file)
@@ -127,25 +140,19 @@ export function useBibliographies(editor: EditorDocumentsController): Bibliograp
       setFiles([])
       setSelectedId('')
       setOpen(false)
+      setDiscoveryReady(false)
+      setDiscoveryReady(false)
+      setDefaultBibliographyExists(false)
       return
     }
     const documentId = activeDocument.id
     if (visibleDocumentRef.current !== documentId) {
-      const previousDocumentId = visibleDocumentRef.current
-      const dirtyFiles = filesRef.current.filter(({ isDirty }) => isDirty)
-      if (previousDocumentId && dirtyFiles.length) {
-        const names = dirtyFiles.map(({ name }) => name).join(', ')
-        if (!window.confirm(`Switch documents without saving bibliography changes in ${names}?`)) {
-          editor.activateDocument(previousDocumentId)
-          return
-        }
-        for (const file of dirtyFiles) dirtyBuffersRef.current.delete(file.filePath)
-      }
       visibleDocumentRef.current = documentId
       setFiles([])
       setSelectedId('')
       setOpen(false)
     }
+    setDiscoveryReady(false)
     const request = ++requestRef.current
     const timeout = window.setTimeout(() => {
       void desktop.discoverBibliographies({
@@ -156,7 +163,9 @@ export function useBibliographies(editor: EditorDocumentsController): Bibliograp
           filePath: activeDocument.filePath!,
           source: activeDocument.source,
         }],
-        retainedIds: filesRef.current.filter(({ isDirty }) => isDirty).map(({ id }) => id),
+        retainedFiles: [...dirtyBuffersRef.current.values()]
+          .filter((file) => file.documentId === documentId)
+          .map(({ id, filePath }) => ({ id, filePath })),
       }).then((result) => {
         if (request !== requestRef.current || result.documentId !== documentId) return
         const selectedPath = filesRef.current.find(({ id }) => id === selectedIdRef.current)?.filePath
@@ -183,16 +192,26 @@ export function useBibliographies(editor: EditorDocumentsController): Bibliograp
           const discovered = result.files.map((file) => {
             const existing = current.find(({ filePath }) => filePath === file.filePath)
               ?? dirtyBuffersRef.current.get(file.filePath)
-            return existing?.isDirty ? { ...file, ...existing, id: file.id } : toBuffer(file)
+            return existing?.isDirty ? { ...file, ...existing, id: file.id } : toBuffer(file, documentId)
           })
           const dirtyOrphans = current.filter(({ filePath, isDirty }) => isDirty && !discoveredPaths.has(filePath))
           return [...discovered, ...dirtyOrphans]
         })
-        setSelectedId(result.files.find(({ filePath }) => filePath === selectedPath)?.id
+        const defaultFile = pendingOpenRef.current?.documentId === documentId
+          ? result.files.find(({ filePath }) => filePath === pendingOpenRef.current?.filePath)
+          : undefined
+        setSelectedId(defaultFile?.id
+          ?? result.files.find(({ filePath }) => filePath === selectedPath)?.id
           ?? filesRef.current.find(({ filePath, isDirty }) => filePath === selectedPath && isDirty)?.id
           ?? result.files[0]?.id
           ?? filesRef.current.find(({ isDirty }) => isDirty)?.id
           ?? '')
+        if (defaultFile) {
+          pendingOpenRef.current = undefined
+          setOpen(true)
+        }
+        setDefaultBibliographyExists(result.defaultBibliographyExists)
+        setDiscoveryReady(true)
         if (!result.files.length && !filesRef.current.some(({ isDirty }) => isDirty)) setOpen(false)
         if (externallyReloaded) incrementDependencyRevision(documentId)
         for (const change of dirtyChanges) {
@@ -218,7 +237,10 @@ export function useBibliographies(editor: EditorDocumentsController): Bibliograp
           }).catch((error) => reportError('bibliography-rediscovery-conflict', error))
         }
       }).catch((error) => {
-        if (request === requestRef.current) reportError('bibliography-discovery', error)
+        if (request === requestRef.current) {
+          setDiscoveryReady(false)
+          reportError('bibliography-discovery', error)
+        }
       })
     }, 180)
     return () => {
@@ -295,10 +317,38 @@ export function useBibliographies(editor: EditorDocumentsController): Bibliograp
   }
 
   const saveAll = async () => {
+    if ([...dirtyBuffersRef.current.values()].some((file) => file.documentId !== activeDocumentRef.current?.id)) {
+      reportError('bibliography-save', new Error('Switch to each document with unsaved bibliography changes and save it before closing.'))
+      return false
+    }
     for (const file of filesRef.current.filter(({ isDirty }) => isDirty)) {
       if (!await saveFile(file)) return false
     }
     return true
+  }
+
+  const createDefault = async () => {
+    const desktop = window.typstDesktop
+    const document = activeDocumentRef.current
+    if (!desktop || !document?.filePath || !discoveryReady || filesRef.current.length || creatingDocumentRef.current) return
+    creatingDocumentRef.current = document.id
+    setCreating(true)
+    try {
+      const { reference, filePath } = await desktop.createDefaultBibliography({
+        documentId: document.id,
+        sourceFilePath: document.filePath,
+      })
+      const latest = editor.getDocuments().find(({ id }) => id === document.id)
+      if (!latest || latest.filePath !== document.filePath) return
+      pendingOpenRef.current = { documentId: document.id, filePath }
+      const separator = latest.source.endsWith('\n') ? '\n' : '\n\n'
+      editor.changeSource(latest, `${latest.source}${separator}#bibliography("${reference}")\n`)
+    } catch (error) {
+      reportError('bibliography-create', error)
+    } finally {
+      creatingDocumentRef.current = ''
+      setCreating(false)
+    }
   }
 
   return {
@@ -306,6 +356,9 @@ export function useBibliographies(editor: EditorDocumentsController): Bibliograp
     selectedFile,
     open: open && Boolean(selectedFile),
     saving: Boolean(selectedFile && savingIds.has(selectedFile.id)),
+    creating,
+    canCreateDefault: discoveryReady && visibleFiles.length === 0 && Boolean(activeDocument?.filePath),
+    defaultBibliographyExists,
     select: (id) => {
       if (!id) {
         setOpen(false)
@@ -318,22 +371,44 @@ export function useBibliographies(editor: EditorDocumentsController): Bibliograp
       if (filesRef.current.length) setOpen((current) => !current)
     },
     close: () => setOpen(false),
+    createDefault,
+    discardDocument: (documentId) => {
+      if (activeDocumentRef.current?.id !== documentId) return
+      for (const [filePath, file] of dirtyBuffersRef.current) {
+        if (file.documentId === documentId) dirtyBuffersRef.current.delete(filePath)
+      }
+      visibleDocumentRef.current = ''
+      pendingOpenRef.current = undefined
+      setFiles([])
+      setSelectedId('')
+      setOpen(false)
+    },
     prepareDocumentClose: (documentId) => {
-      if (activeDocumentRef.current?.id !== documentId) return true
-      const dirtyFiles = filesRef.current.filter(({ isDirty }) => isDirty)
+      if (creatingDocumentRef.current === documentId) {
+        window.alert('Wait for bibliography creation to finish before closing this document.')
+        return false
+      }
+      const dirtyFiles = [...dirtyBuffersRef.current.values()].filter((file) => file.documentId === documentId)
       if (!dirtyFiles.length) return true
       const names = dirtyFiles.map(({ name }) => name).join(', ')
       if (!window.confirm(`Close without saving bibliography changes in ${names}?`)) return false
       for (const file of dirtyFiles) dirtyBuffersRef.current.delete(file.filePath)
-      setFiles((current) => current.map((file) => file.isDirty ? {
+      setFiles((current) => current.map((file) => file.documentId === documentId && file.isDirty ? {
         ...file,
         content: file.savedContent,
         isDirty: false,
       } : file))
       return true
     },
-    getDirtyFiles: () => filesRef.current.filter(({ isDirty }) => isDirty),
-    getDirtyNames: () => filesRef.current.filter(({ isDirty }) => isDirty).map(({ name }) => name),
+    getDirtyFiles: () => [...dirtyBuffersRef.current.values()],
+    getDirtyNames: () => [...dirtyBuffersRef.current.values()].map(({ name }) => name),
+    isBusy: () => Boolean(creatingDocumentRef.current || savingIdsRef.current.size),
+    waitForIdle: async () => {
+      const deadline = Date.now() + 5000
+      while ((creatingDocumentRef.current || savingIdsRef.current.size) && Date.now() < deadline) {
+        await new Promise((resolve) => window.setTimeout(resolve, 25))
+      }
+    },
     changeContent: (content) => setFiles((current) => current.map((file) => file.id === selectedFile?.id ? {
       ...file,
       content,

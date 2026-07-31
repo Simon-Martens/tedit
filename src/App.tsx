@@ -21,6 +21,7 @@ import { useTinymistLanguageServer } from './hooks/useTinymistLanguageServer'
 import { useTypstCompilation } from './hooks/useTypstCompilation'
 import { createDocument, createPdfFilename } from './lib/documents'
 import { toLanguageServerDocuments } from './lib/languageServerDocuments'
+import { reportError } from './lib/logging'
 
 function App() {
   const editor = useEditorDocuments()
@@ -60,6 +61,35 @@ function App() {
     id,
     () => bibliographies.prepareDocumentClose(id),
   )
+  const deleteActiveDocument = async () => {
+    const document = editor.activeDocument
+    if (!document || bibliographies.isBusy() || !await files.deleteFile(document)) return
+    bibliographies.discardDocument(document.id)
+    const currentDocuments = editor.getDocuments()
+    const deletedIndex = currentDocuments.findIndex(({ id }) => id === document.id)
+    const remaining = currentDocuments.filter(({ id }) => id !== document.id)
+    const nextActive = remaining[Math.min(deletedIndex, remaining.length - 1)]
+    editor.removeDocument(document.id)
+    try {
+      await Promise.all([
+        window.typstDesktop?.saveSession({
+          filePaths: remaining.flatMap(({ filePath }) => filePath ? [filePath] : []),
+          activeFilePath: nextActive?.filePath,
+        }),
+        window.typstDesktop?.saveRecovery({
+          documents: remaining.filter((entry) => entry.isDirty || !entry.filePath).map((entry) => ({
+            recoveryId: entry.id,
+            filePath: entry.filePath,
+            name: entry.fileName,
+            content: entry.source,
+          })),
+          activeFilePath: nextActive?.filePath,
+        }),
+      ])
+    } catch (error) {
+      reportError('document-delete-persistence', error)
+    }
+  }
 
   useDocumentTitle(editor.activeDocument)
   useShortcuts({
@@ -144,6 +174,7 @@ function App() {
           errorHighlightingEnabled={settings.errorHighlightingEnabled}
           compilationOpen={compilation.open}
           onSave={() => void files.saveFile()}
+          onDeleteFile={() => void deleteActiveDocument()}
           bibliographies={bibliographies}
           languageServerDocuments={toLanguageServerDocuments(editor.documents)}
         />

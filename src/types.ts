@@ -151,6 +151,7 @@ export interface DesktopApi {
     content: string
     expectedDiskVersion?: string | null
   }): Promise<DesktopFileMetadata | DesktopFileChange | null>
+  deleteDocument(request: { filePath: string; expectedDiskVersion: string }): Promise<boolean>
   watchDocuments(filePaths: string[]): Promise<WatchHealthStatus>
   onDocumentWatchStatus(listener: (status: WatchHealthStatus) => void): () => void
   onDocumentChange(listener: (change: DesktopFileChange) => void): () => void
@@ -159,8 +160,16 @@ export interface DesktopApi {
     sourceFilePath: string
     rootFilePath: string
     documents: Array<{ filePath: string; source: string }>
-    retainedIds: string[]
-  }): Promise<{ documentId: string; files: BibliographyFile[] }>
+    retainedFiles: Array<{ id: string; filePath: string }>
+  }): Promise<{
+    documentId: string
+    files: BibliographyFile[]
+    defaultBibliographyExists: boolean
+  }>
+  createDefaultBibliography(request: {
+    documentId: string
+    sourceFilePath: string
+  }): Promise<{ reference: string; filePath: string }>
   saveBibliography(request: {
     documentId: string
     id: string
