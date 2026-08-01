@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import Editor, { type OnMount } from '@monaco-editor/react'
+import Editor, { type EditorProps, type OnChange, type OnMount } from '@monaco-editor/react'
 import type { editor as MonacoEditor, languages as MonacoLanguages, Position } from 'monaco-editor'
 import { initVimMode, VimMode, type VimAdapterInstance } from 'monaco-vim'
 import { configureTypstLanguage, getTypstFoldingRanges } from '../lib/typstLanguage'
@@ -25,6 +25,48 @@ interface VimClipboardApi {
 
 let fallbackClipboard = ''
 const textEncoder = new TextEncoder()
+const editorLoading = <div className="editor-loading">Loading Monaco editor...</div>
+const sourceEditorOptions = {
+  automaticLayout: true,
+  wordWrap: 'on',
+  wrappingIndent: 'indent',
+  minimap: { enabled: false },
+  fontFamily: "'JetBrains Mono', 'SFMono-Regular', Consolas, monospace",
+  fontSize: 14,
+  lineHeight: 22,
+  padding: { top: 14, bottom: 14 },
+  folding: true,
+  showFoldingControls: 'always',
+  quickSuggestions: true,
+  suggestOnTriggerCharacters: true,
+  wordBasedSuggestions: 'matchingDocuments',
+  scrollBeyondLastLine: false,
+  smoothScrolling: false,
+  renderLineHighlight: 'none',
+  overviewRulerBorder: false,
+  guides: {
+    indentation: false,
+    bracketPairs: false,
+    bracketPairsHorizontal: false,
+    highlightActiveIndentation: false,
+    highlightActiveBracketPair: false,
+  },
+  scrollbar: {
+    vertical: 'visible',
+    horizontal: 'visible',
+    verticalScrollbarSize: 10,
+    horizontalScrollbarSize: 10,
+    useShadows: false,
+  },
+} satisfies MonacoEditor.IStandaloneEditorConstructionOptions
+
+function StableEditor({ onMount, ...props }: EditorProps) {
+  const mountRef = useRef(onMount)
+  const stableMountRef = useRef<OnMount | null>(null)
+  mountRef.current = onMount
+  stableMountRef.current ??= (editor, monaco) => mountRef.current?.(editor, monaco)
+  return <Editor {...props} onMount={stableMountRef.current} />
+}
 
 function createClipboardRegister(): VimRegister {
   let lastWrittenText = ''
@@ -162,6 +204,7 @@ export function SourcePane({
   const lastEditAtRef = useRef(0)
   const documentRef = useRef(document)
   const languageServerDocumentsRef = useRef(languageServerDocuments)
+  const defaultSourcesRef = useRef(new Map<string, string>())
   const initiallyCollapsedModelsRef = useRef(new Set<string>())
   const foldingEnabledRef = useRef(foldingEnabled)
   const autocompleteEnabledRef = useRef(autocompleteEnabled)
@@ -174,11 +217,18 @@ export function SourcePane({
   const diagnosticsRef = useRef(diagnostics)
   const cursorCallbackRef = useRef(onCursorPositionChange)
   const cursorPositionCallbackRef = useRef(onCursorChange)
+  const sourceChangeCallbackRef = useRef(onChange)
   const saveCallbackRef = useRef(onSave)
+  const editorChangeHandlerRef = useRef<OnChange | null>(null)
   const [canUndo, setCanUndo] = useState(false)
   const [canRedo, setCanRedo] = useState(false)
+  if (!defaultSourcesRef.current.has(document.id)) {
+    defaultSourcesRef.current.set(document.id, document.source)
+  }
+  const defaultSource = defaultSourcesRef.current.get(document.id)!
   cursorCallbackRef.current = onCursorPositionChange
   cursorPositionCallbackRef.current = onCursorChange
+  sourceChangeCallbackRef.current = onChange
   saveCallbackRef.current = onSave
   documentRef.current = document
   languageServerDocumentsRef.current = languageServerDocuments
@@ -186,6 +236,13 @@ export function SourcePane({
   autocompleteEnabledRef.current = autocompleteEnabled
   errorHighlightingEnabledRef.current = errorHighlightingEnabled
   diagnosticsRef.current = diagnostics
+  editorChangeHandlerRef.current ??= (value) => {
+    if (applyingExternalSourceRef.current) return
+    const source = value ?? ''
+    pendingSourceRef.current = source
+    lastEditAtRef.current = performance.now()
+    sourceChangeCallbackRef.current(source)
+  }
 
   useEffect(() => {
     const editor = editorRef.current
@@ -216,6 +273,7 @@ export function SourcePane({
     if (pendingSourceRef.current !== undefined) {
       if (pendingSourceRef.current !== currentDocument.source) return
       pendingSourceRef.current = undefined
+      return
     }
     if (model.getValue() === currentDocument.source) return
 
@@ -403,7 +461,7 @@ export function SourcePane({
 
   useEffect(() => {
     applyDiagnostics()
-  }, [diagnostics, document.sourceRevision, document.dependencyRevision, errorHighlightingEnabled])
+  }, [diagnostics, document.id, errorHighlightingEnabled])
 
   useEffect(() => {
     editorRef.current?.updateOptions({
@@ -557,7 +615,7 @@ export function SourcePane({
         </span>
       </div>
       <div className="editor-wrap">
-        <Editor
+        <StableEditor
           onMount={(editor, monaco) => {
             editorRef.current = editor
             monacoRef.current = monaco
@@ -581,7 +639,7 @@ export function SourcePane({
                   return { suggestions: [] }
                 }
                 const currentDocument = documentRef.current
-                const source = model.getValue()
+                const source = pendingSourceRef.current ?? currentDocument.source
                 let activeDocumentFound = false
                 const openDocuments = languageServerDocumentsRef.current.map((openDocument) => {
                   if (openDocument.documentId !== currentDocument.id) return openDocument
@@ -703,49 +761,11 @@ export function SourcePane({
           beforeMount={configureTypstLanguage}
           language="typst"
           path={`tedit://${document.id}.typ`}
-          defaultValue={document.source}
-          onChange={(value) => {
-            if (applyingExternalSourceRef.current) return
-            const source = value ?? ''
-            pendingSourceRef.current = source
-            lastEditAtRef.current = performance.now()
-            onChange(source)
-          }}
+          defaultValue={defaultSource}
+          onChange={editorChangeHandlerRef.current}
           theme={lightThemeEnabled ? 'vs' : 'vs-dark'}
-          loading={<div className="editor-loading">Loading Monaco editor...</div>}
-          options={{
-            automaticLayout: true,
-            wordWrap: 'on',
-            wrappingIndent: 'indent',
-            minimap: { enabled: false },
-            fontFamily: "'JetBrains Mono', 'SFMono-Regular', Consolas, monospace",
-            fontSize: 14,
-            lineHeight: 22,
-            padding: { top: 14, bottom: 14 },
-            folding: foldingEnabled,
-            showFoldingControls: foldingEnabled ? 'always' : 'never',
-            quickSuggestions: autocompleteEnabled,
-            suggestOnTriggerCharacters: autocompleteEnabled,
-            wordBasedSuggestions: autocompleteEnabled ? 'matchingDocuments' : 'off',
-            scrollBeyondLastLine: false,
-            smoothScrolling: true,
-            renderLineHighlight: 'none',
-            overviewRulerBorder: false,
-            guides: {
-              indentation: false,
-              bracketPairs: false,
-              bracketPairsHorizontal: false,
-              highlightActiveIndentation: false,
-              highlightActiveBracketPair: false,
-            },
-            scrollbar: {
-              vertical: 'visible',
-              horizontal: 'visible',
-              verticalScrollbarSize: 10,
-              horizontalScrollbarSize: 10,
-              useShadows: false,
-            },
-          }}
+          loading={editorLoading}
+          options={sourceEditorOptions}
         />
       </div>
       <div className="vim-status-bar" ref={vimStatusRef} aria-live="polite" />

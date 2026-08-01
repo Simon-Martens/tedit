@@ -278,13 +278,12 @@ class TinymistLspService {
         if (uri !== this.uri && !requestedUris.has(uri)) documentsChanged = true
       }
     }
-    if (documentsChanged) {
-      this.compileGeneration += 1
-      this.exportCancellation?.cancel()
-      if (this.pendingCompile) {
-        this.pendingCompile.resolve({ cancelled: true })
-        this.pendingCompile = undefined
-      }
+    if (!documentsChanged) return this.syncDrainPromise ?? Promise.resolve()
+    this.compileGeneration += 1
+    this.exportCancellation?.cancel()
+    if (this.pendingCompile) {
+      this.pendingCompile.resolve({ cancelled: true })
+      this.pendingCompile = undefined
     }
     this.pendingSync = request
     this.scheduleSyncDrain()
@@ -354,7 +353,7 @@ class TinymistLspService {
         textDocument: { uri },
       })
       this.openDocuments.delete(uri)
-      if (uri !== this.uri) dependenciesChanged = true
+      if (uri !== this.uri && uri !== this.activeUri) dependenciesChanged = true
     }
 
     for (const [uri, next] of nextDocuments) {
@@ -368,7 +367,7 @@ class TinymistLspService {
             text: next.source,
           },
         })
-        if (uri !== this.uri) dependenciesChanged = true
+        if (uri !== this.uri && uri !== this.activeUri) dependenciesChanged = true
       } else if (current.version !== next.version || current.source !== next.source) {
         const sourceChanged = current.source !== next.source
           || (current.sourceVersion ?? current.version) !== (next.sourceVersion ?? next.version)
@@ -380,7 +379,7 @@ class TinymistLspService {
           this.source = next.source
           this.version = next.version
           this.sentVersion = next.version
-        } else {
+        } else if (uri !== this.activeUri) {
           dependenciesChanged = dependenciesChanged || sourceChanged
         }
       }

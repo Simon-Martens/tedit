@@ -6,7 +6,8 @@ const DISABLED_STATUS: SourceSyncStatus = {
   state: 'disabled',
   message: 'The live preview requires the tedit desktop app.',
 }
-const SOURCE_UPDATE_SETTLE_MS = 40
+const SOURCE_UPDATE_SETTLE_MS = 120
+const SOURCE_LOCATE_SETTLE_MS = 80
 
 export function useSourcePreviewSync(
   document: EditorDocument | undefined,
@@ -14,12 +15,11 @@ export function useSourcePreviewSync(
   enabled: boolean,
 ) {
   const [positions, setPositions] = useState<PreviewPosition[]>([])
-  const [sourceCursorLocation, setSourceCursorLocation] = useState<SourceCursorLocation>()
   const [sourceReveal, setSourceReveal] = useState<PreviewSourceReveal>()
   const [status, setStatus] = useState<SourceSyncStatus>(DISABLED_STATUS)
   const lastLocationRef = useRef<SourceCursorLocation | undefined>(undefined)
   const pendingLocationRef = useRef<SourceCursorLocation | undefined>(undefined)
-  const locateFrameRef = useRef<number | undefined>(undefined)
+  const locateTimerRef = useRef<number | undefined>(undefined)
   const requestIdRef = useRef(0)
   const memoryFiles = documents.flatMap((openDocument) => openDocument.filePath ? [{
     filePath: openDocument.filePath,
@@ -40,7 +40,6 @@ export function useSourcePreviewSync(
   useEffect(() => {
     const desktop = window.typstDesktop
     lastLocationRef.current = undefined
-    setSourceCursorLocation(undefined)
     setSourceReveal(undefined)
     requestIdRef.current = 0
     setPositions([])
@@ -56,8 +55,12 @@ export function useSourcePreviewSync(
 
     const removeJumpListener = desktop.onSourceJump((jump) => {
       if (jump.documentId === document.id && jump.requestId === requestIdRef.current) {
-        setPositions(jump.positions)
-        setSourceCursorLocation(lastLocationRef.current)
+        setPositions((current) => current.length === jump.positions.length
+          && current.every((position, index) => (
+            position.page === jump.positions[index].page
+            && position.x === jump.positions[index].x
+            && position.y === jump.positions[index].y
+          )) ? current : jump.positions)
       }
     })
     const removeStatusListener = desktop.onSourceSyncStatus((nextStatus) => {
@@ -85,8 +88,8 @@ export function useSourcePreviewSync(
       removeJumpListener()
       removeStatusListener()
       removeSourceRevealListener()
-      if (locateFrameRef.current !== undefined) cancelAnimationFrame(locateFrameRef.current)
-      locateFrameRef.current = undefined
+      window.clearTimeout(locateTimerRef.current)
+      locateTimerRef.current = undefined
       pendingLocationRef.current = undefined
       desktop.stopSourceSync({ documentId: document.id })
     }
@@ -114,7 +117,6 @@ export function useSourcePreviewSync(
     }
   }, [
     document?.id,
-    document?.sourceRevision,
     status.state,
     enabled,
   ])
@@ -124,9 +126,9 @@ export function useSourcePreviewSync(
     lastLocationRef.current = location
     pendingLocationRef.current = location
     requestIdRef.current += 1
-    if (locateFrameRef.current !== undefined) return
-    locateFrameRef.current = requestAnimationFrame(() => {
-      locateFrameRef.current = undefined
+    window.clearTimeout(locateTimerRef.current)
+    locateTimerRef.current = window.setTimeout(() => {
+      locateTimerRef.current = undefined
       const pending = pendingLocationRef.current
       if (!pending || !window.typstDesktop || !canLocateRef.current || !document) return
       window.typstDesktop.locateSource({
@@ -134,7 +136,7 @@ export function useSourcePreviewSync(
         requestId: requestIdRef.current,
         ...pending.lookup,
       })
-    })
+    }, SOURCE_LOCATE_SETTLE_MS)
   }
 
   const revealPreviewSource = (position: PreviewPosition) => {
@@ -142,5 +144,5 @@ export function useSourcePreviewSync(
     window.typstDesktop?.revealPreviewSource({ documentId: document.id, ...position })
   }
 
-  return { positions, sourceCursorLocation, sourceReveal, status, locate, revealPreviewSource }
+  return { positions, sourceReveal, status, locate, revealPreviewSource }
 }

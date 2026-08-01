@@ -76,6 +76,7 @@ const windowLifecycle = createWindowLifecycle({
   onIpc,
   stopBibliography: bibliographyIpc.revokeForWebContents,
   stopPreviewDiscovery: previewDiscovery.stopForWebContents,
+  stopTinymist: tinymistController.stopForWebContents,
   trustedWebContentsIds,
 })
 

@@ -10,7 +10,7 @@ Und außerdem lässt es sich so leichter im `code` navigieren.
 Mit einem doppeltem Umbruch kommt hier der zweite Absatz. 
 
 Einen manuellen Zeilenumbruch kann man erzwingen, indem man einen Backslash ('\\') ans Ende der Zeile setzt. So: \
-Der manuelle Zeilenumbruch ist selten nötig, vielleicht am ehesten beispielsweise bei Gedichten  oder anderen Phänomenen der Literatur, wenn der Zeilenumbruch semantisch bedeutsam und klar vom Absatzumbruch unterschieden (und keine Frage des Textsatzes) ist. 
+Der manuelle Zeilenumbruch ist selten nötig, vielleicht am ehesten beispielsweise bei Gedichten  oder anderen Phänomenen der Literatur, wenn der Zeilenumbruch semantisch bedeutsam und klar vom Absatzumbruch unterschieden (und keine Frage des Textsatzes) ist.  Was
 
 - Alle anderen Blöcke, die nicht Absätze sind, wie Überschriften, Listen, Blockzitate, Formeln etc. haben eigene Satzregeln und werden automatisch erkannt oder gekennzeichnet. \
     Das hier ist ein eingezogener Abschnitt. Er beginnt mit einem Tabulator.
@@ -25,7 +25,7 @@ Wir kennen bisher aulso zwei automatisch erkannte Blöcke: Absätze und Listen.
 == die verwendet werden können $<-$ Überschrift zweiter Ebene ('==' usw.)
 
 / Term: Das hier ist die Definition eines Begriffs, auch dafür hat Typst eine Kurzform
-/ Benutzung:  Dazu schreibt man erst einen forward Slash ('/') an den Satzanfang, ein Spatium, den Term, der definiert werden soll und schließlich einen Doppelpunkt, gefolgt von der Definition. Verwendet wird das vor allem in der Mathematik oder Naturwissenschaft.
+/ Benutzung:  Dazu schreibt man erst einen forward Slash ('/') an den Satzanfang, ein Spatium, den Term, der definiert werden soll und schließlich einen Doppelpunkt, gefolgt von der Definition. Verwendet wird das vor allem in der Mathematik oder Naturwissenschaft. Was
 
 // Ein besonderer Block ist der Kommentar
 /* Dieser hier ist sogar mehrzeilig.
@@ -49,7 +49,7 @@ Das war's mit der ersten Seite und Vanilla-Typst-Features. Vielleicht noch zulet
 
 #pagebreak()
 
-== Code 
+== \#Code...
 
 Mit der Zeile
 
@@ -57,14 +57,15 @@ Mit der Zeile
 #pagebreak()
 ```
 
-haben wir schon die bedeutsamste Neuerung  im Vergleich zu herkömmlichen Textformaten gesehen: in Typst vermischt sich _Text_ mit _Code,_ um das final ausgegbene Dokument nach Anweisung zu erstellen. 
+haben wir schon die bedeutsamste Neuerung  im Vergleich zu herkömmlichen Textformaten gesehen: in Typst vermischt sich _Text_ mit _Code,_ um das final ausgegbene Dokument nach Anweisung zu erstellen.
+Die _Funktion_ `#pagebreak()` löst einen erzwungenen Seitenumbruch aus; und zwar genau an der Stelle, an welcher sie aufgerufen wird.
 Die Mögichkeit, mit Code zu arbeiten, macht Typst erst interessant und nützlich.
 Die eingestreuten Anweisungen erlauben uns, das Dokument genau so zu gestalten, wie wir es haben wollen.
 Die Möglichkeit, Seiten, Absätze und Text zu programmieren (in \~Etwa analog zu Seiten-, Absatz- und Zeichenformaten), gibt Typst einen viel größeren Funktionumfang als _WYSIWYG-Editoren_#footnote[_What You See Is What You Get_ -- wie Word, LibreOffice oder InDesign. Ganz anders hier: hier wird Quellcode geschrieben, and what you get is what you don't see -- it's what you tell the program to do.].
 
 Damit ist ein weiteres Sonderzeichen, die Raute '\#' eingeführt. Die Raute signalisiert: jetzt kommt Code, jetzt kommt eine Funktion, die ausgeführt werden soll. Auch sie müssen wir _escapen_ wenn wir sie als Zeichen benutzen wollen.
 
-== Text 
+== ...und \[Text\] 
 
 Wir ändern mal die Schriftart:
 
@@ -74,15 +75,20 @@ Wir ändern mal die Schriftart:
 
 #set text(font: ("Linux Biolinum O", "Libre Baskerville", "Gill Sans", "sans-serif")) 
 
-Ab sofort ist die Schiftart anders. Wir sehen, die Schrift ändert sich, ab der Stelle, an welcher die Funktion ausgeführt wird. Als Umkehrung von '\#' gibt es '\[' und '\]'; hier wird _Text_ in Code-Kontexten eingeschlossen. \[ bedeutet: jetzt kommt Text, und nicht code. Das erlaubt, Textstile lokal zu begrenzen, und nicht global ab sofort festsetzen:
+Ab sofort ist die Schiftart anders. Wir sehen, die Schrift ändert sich, und zwar genau wie oben, ab der Stelle, an welcher die Funktion aufgerufen wird. 
 
-#upper()[Das hier ist groß geschrieben]. \
-#lower()[Das hier is KLEIN geschrieben].
+Wir müssen aber nicht immer zwingend alle Änderungen an Zeichen- oder Absatzformaten für den gesamten kommenden Text festlegen. Dazu gibt es, quasi als Umkehrung von '\#' \[die eckige Klammer\] '\['; so wird _Text_ in Code-Kontexten eingeschlossen. Die aufgehende Klammer \[ bedeutet: jetzt kommt ein Textkontext, und nicht code. Damit können wir Textstile lokal begrenzen:
 
-Nach der Schließung der eckigen Klammer mit '\]' geht es hier wie gewohnt weiter. Runde und eckige Klammern können mit vielen Funktionen auch kombiniert werden: #highlight(fill: yellow)[Das kannste dir merken.] Dabei folgen in der runden Klammer immer die _Argumente_ der Funktion, also Meta-Informationen zu der jeweiligen Funktion, die beschreiben, mit _welchen_ Eigenschaften die Funktion ausgeführt wird, und in eckigen Klammern der Text, auf den sich die Funktion bezieht. Die möglichen Argumente sind je nach Funktion unterschiedlich.
+#upper()[Das hier ist groß geschrieben.] #lower()[Das KLEIN.] 
+
+Nach der Schließung der eckigen Klammer '\]' geht es wie zuvor weiter.
+
+== Argumente
+
+Wie oben, bei der Änderung der Schriftart, können bestimmte Funktionen auch Argumente haben. Argumente sind Zusatzinformationen, die sich auf die Ausführung der jeweiligen Funktion beziehen, und werden in runde Klammern eingeschlossen: #highlight(fill: yellow)[Das kannste dir merken.] Die Syntax ist also `#Funktion(Argumentname: Argumentwert)` Funktionen können optionale und erforderliche Argumente haben.
 
 ```typst
-#upper()[Das hier ist groß geschrieben]
+#upper()[Das hier ist groß geschrieben]. #lower()[Das KLEIN.] 
 #highlight(fill: yellow)[Das kannste dir merken.]
 ```
 
@@ -92,23 +98,22 @@ Man kann aber nicht schreiben:
 #upper(fill: yellow)[Das hier ist groß geschrieben]
 ```
 
-Weil die Funktion `upper` das Argument `fill` nicht kennt, die Funktion `highlight` hingegen schon. Die Syntax ist also `#funktion(spezifisches_argument: wert)[Text]`.
-
-Unsere Shortcuts von vorhin sind deswegen Shortcuts, weil sie die Verwendung von einer Funktion abkürzt. So könnte man statt `_Hervorgehoben_` auch schreiben `#emph()[Hervorgehoben]`. Beweis: _Hervorgehoben_ und #emph()[Hervorgehoben]. Wir haben nur deswegen Shortcuts, weil man diese Dinge oft braucht und nicht jedes Mal den ganzen Kladderadatsch von vorn schreiben will.
-
-Es gibt einige Funktionen, die sich auf konkreten Text beziehen, wir haben nur ein paar kennen gelernt. Jetzt richten wir erst einmal unsrer _Seite_ ein.
+Weil die Funktion `upper` das Argument `fill` nicht kennt, die Funktion `highlight` hingegen schon. Wie in einer Programmiersprache auch, gibt es bestimmte Datentypen für die Werte der Argumente: ich kann `fill: yellow` schreiben, weil der Wert der Variable `yellow` Typst bekannt ist. Den Wert `rose` hätte Typst abgelehnt. Das ginge nur mit rgb("\#ffc4e1"), #highlight(fill: rgb("#ffc4e1"))[ dem Hex-Code der Farbe.]
 
 #set page(
   paper: "a4",
   margin: (top: 25mm, right: 44mm, bottom: 35mm, left: 25mm),
-  footer: context {
-    set text(size: 9pt)
-    grid(
+  footer: [
+    #set text(size: 9pt)
+    #grid(
       columns: (1fr, auto),
       [Vorführungsdokument Typst],
-      counter(page).display("1")
+// Das keyword context sorgt dafür, dass der Footer nicht hier an dieser Stelle einmal ausgeführt wird, was das "normale" Typst-Verhalten wäre; sondern immer wieder an den Stellen, an welcher der im Kontext enthaltene Text gesetzt wird. So aktualisiert sich die Seitenzahl auf jeder Seite.
+      context {
+        counter(page).display("1")
+      }
     )
-  },
+  ]
 )
 
 #set text(
@@ -122,19 +127,34 @@ Es gibt einige Funktionen, die sich auf konkreten Text beziehen, wir haben nur e
 
 == Dokument 
 
-Mit der Funktion `#page` hben wir nun unsere Seite eingerichtet. Wir haben die Papiergröße gesetzt (` paper: "a4"`), Seitenränder festgelegt (`margin: (top: 25mm, right: 44mm, bottom: 35mm, left: 25mm)`), und einen Footer gesetzt. Der Footer ist etwas komplexer: im Grunde wird eine Schriftgröße festgesetzt, die im Footer-Kontext gilt, zwei Spalten eingerichtet und festgelegt, was im Footer gezeigt wird. Ein bisschen komlexer ist die `#context`-Funktion über die man alles #link("https://typst.app/docs/reference/context/")[hier] nachlesen kannn.
+Die Funktion `#page` bezieht sich nicht auf Text, sondern auf die Seiteneinrichtung. Mit dem Argument ` paper: "a4"` lässt sich die Seitengröße einstellen, `margin` dient zur Angabe der Seitenränder.
+Dieser Teil:
 
-Zusätzlich haben wir mit der `#text()`-Funktion unsere Sprache gesetzt, und die Silbentrennung eingestellt (sehr wichtig für den Flattersatz!). Mit 
-
-```typst
-#set par(
-    leading: 0.68em,
+```Typst
+#set page(
+  footer: [
+    #set text(size: 9pt)
+    #grid(
+      columns: (1fr, auto),
+      [Vorführungsdokument Typst],
+      context {
+        counter(page).display("1")
+      }
+    )
+  ]
 )
 ```
+ist etwas komplexer. Im Grunde wird eine Schriftgröße festgesetzt und außerdem angegeben, was in jeder von zwei Spalten im Footer gezeigt wird. Ein bisschen schwieriger ist das `#context`_-Keyword_, über welches man alles #link("https://typst.app/docs/reference/context/")[$->$ hier] nachlesen kannn. Zusätzlich haben wir mit der `#text()`-Funktion die Sprache des Textes angegeben, und die Silbentrennung eingestellt (sehr wichtig!). Die letzte Funktion `#par()` ist das dritte Ding im Bunde neben Zeichen- und Seitenformatierung -- nämlich die Absatzformatierung. `leading` ist dabei der Zeilenabstand.
 
-haben wir den Zeilenabstand eingestellt.
+== Auto-Ersetzungen und `#show`-Rules
 
-*Wichtig,* weil in der ersten Seite vielleicht der Eindruck entstanden ist, `#pagebreak()` sei erforderlich, damit Typst Seiten umbricht. Es signalisiert nur: hier bitte die Seite beenden und unbedingt die nächste Seite anfangen, egal, wo auf einer Seite sich der Text gerade befindet.
+Unsere Shortcuts von vorhin sind deswegen Shortcuts, weil sie die Verwendung einer Funktion abkürzen. Man müsste statt `_Hervorgehoben_` immer `#emph()[Hervorgehoben]` schreiben. Weil wir aber den ganzen Kladderadaatsch nicht immer schreiben wollen, haben wir halt Shortcuts. Eins ist aber dasselbe wie das Andere. Beweis: _Hervorgehoben_ und #emph()[Hervorgehoben]. Es gibt eine Menge an Funktionen, die sich auf konkreten Text beziehen, und die Eigenschaften und Charakteristiken vom gesetzten Text bestimmen können. Wir haben nur eine kleine Auswahl kennen gelernt. 
+
+Für bestimmte Zeichen und Zeichenkombinationen nimmt Typst immer Ersetzungen vor (vorausgesetzt, wir befinden uns nicht in einem Code Fence oder im Code). Hier eine Liste:
+
+Jetzt richten wir erst einmal unsrer _Seite_ ein.
+
+
 
 Man muß sich den ganzen Spaß nicht merken. Wenn man einige Typst-Dokumente wie  Aufsätze, Protokolle oder Hausarbeiten schreibt, geht das relativ schnell, weil man immer wieder nur die geichen Funktionen verwendet. Einer KI kann man das Typst-Handbuch als pdf füttern und dann einfach beschreiben, was man gerne hätte. 
 

@@ -7,7 +7,7 @@ import type {
 import { reportError } from '../lib/logging'
 import { toLanguageServerDocuments } from '../lib/languageServerDocuments'
 
-const DOCUMENT_SYNC_SETTLE_MS = 40
+const DOCUMENT_SYNC_SETTLE_MS = 120
 
 const DISABLED_STATUS: LanguageServerStatus = {
   documentId: '',

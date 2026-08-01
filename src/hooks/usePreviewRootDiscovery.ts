@@ -26,19 +26,37 @@ export function usePreviewRootDiscovery(editor: EditorDocumentsController) {
     let cancelled = false
     const applyRoots = (roots: PreviewRoot[], status: WatchHealthStatus) => {
       if (cancelled) return
-      setDiscovery({ documentId, roots, status })
-      editor.transformDocuments((current) => current.map((document) => {
-        if (
-          document.id !== documentId
-          || !document.previewRootPath
-          || roots.some((root) => root.filePath === document.previewRootPath)
-        ) return document
-        return {
-          ...document,
-          previewRootPath: undefined,
-          dependencyRevision: document.dependencyRevision + 1,
-        }
-      }))
+      setDiscovery((current) => current?.documentId === documentId
+        && current.roots.length === roots.length
+        && current.roots.every((root, index) => (
+          root.filePath === roots[index].filePath
+          && root.name === roots[index].name
+          && root.relativePath === roots[index].relativePath
+        ))
+        && current.status.state === status.state
+        && current.status.message === status.message
+        && current.status.watchedDirectories === status.watchedDirectories
+        && current.status.requestedDirectories === status.requestedDirectories
+        && current.status.truncated === status.truncated
+        ? current
+        : { documentId, roots, status })
+      editor.transformDocuments((current) => {
+        let changed = false
+        const next = current.map((document) => {
+          if (
+            document.id !== documentId
+            || !document.previewRootPath
+            || roots.some((root) => root.filePath === document.previewRootPath)
+          ) return document
+          changed = true
+          return {
+            ...document,
+            previewRootPath: undefined,
+            dependencyRevision: document.dependencyRevision + 1,
+          }
+        })
+        return changed ? next : current
+      })
     }
     const removeRootListener = desktop.onPreviewRootsChanged((update) => {
       if (update.filePath === filePath) applyRoots(update.roots, update.status)

@@ -177,6 +177,7 @@ let currentCandidates = []
 let currentLimits = new Set()
 let requestedWatcherCount = 0
 let discoveredDirectoryCount = 0
+let lastPostedSignature
 
 function status() {
   const missingWatchers = Math.max(0, requestedWatcherCount - watchers.size)
@@ -195,7 +196,11 @@ function status() {
 }
 
 function postUpdate() {
-  parentPort.postMessage({ type: 'result', roots: currentCandidates, status: status() })
+  const update = { type: 'result', roots: currentCandidates, status: status() }
+  const signature = JSON.stringify(update)
+  if (signature === lastPostedSignature) return
+  lastPostedSignature = signature
+  parentPort.postMessage(update)
 }
 
 function scheduleWatcherRetry(directory, attempt) {
@@ -213,7 +218,11 @@ function scheduleWatcherRetry(directory, attempt) {
 
 function installWatcher(directory, attempt = 0) {
   try {
-    const watcher = fs.watch(directory, scheduleRefresh)
+    const watcher = fs.watch(directory, (eventType, filename) => {
+      const changedName = filename?.toString().toLowerCase()
+      if (eventType === 'change' && changedName && !changedName.endsWith('.typ')) return
+      scheduleRefresh()
+    })
     watcher.on('error', (error) => {
       if (watchers.get(directory) !== watcher) return
       console.warn(`[tedit:preview-discovery] Watcher failed for ${directory}: ${error.message}`)

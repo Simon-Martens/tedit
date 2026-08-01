@@ -11,6 +11,7 @@ function createWindowLifecycle({
   onIpc,
   stopBibliography,
   stopPreviewDiscovery,
+  stopTinymist,
   trustedWebContentsIds,
 }) {
   const windowCloseStates = new Map()
@@ -116,6 +117,7 @@ function createWindowLifecycle({
       trustedWebContentsIds.delete(webContentsId)
       stopBibliography(webContentsId)
       stopPreviewDiscovery(webContentsId)
+      void stopTinymist(webContentsId).catch((error) => logFailure('tinymist-window-cleanup', error))
     })
 
     window.once('ready-to-show', () => window.show())
@@ -156,6 +158,7 @@ function createWindowLifecycle({
       logFailure('renderer-gone', new Error(details.reason), details)
       stopBibliography(webContentsId)
       stopPreviewDiscovery(webContentsId)
+      void stopTinymist(webContentsId).catch((error) => logFailure('tinymist-renderer-cleanup', error))
     })
     window.webContents.on('before-input-event', (event, input) => {
       if (input.type !== 'keyDown' || (!input.control && !input.meta)) return

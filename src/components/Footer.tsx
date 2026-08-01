@@ -1,10 +1,30 @@
+import { memo, useRef, useSyncExternalStore, type ComponentProps } from 'react'
 import type { EditorDocument, LanguageServerStatus, WatchHealthStatus } from '../types'
 import { Icon } from './Icon'
 
-export function Footer({
+let cursorPosition = { line: 1, column: 1 }
+const cursorListeners = new Set<() => void>()
+
+export function updateFooterCursorPosition(line: number, column: number) {
+  if (cursorPosition.line === line && cursorPosition.column === column) return
+  cursorPosition = { line, column }
+  for (const listener of cursorListeners) listener()
+}
+
+function CursorPosition({ active }: { active: boolean }) {
+  const position = useSyncExternalStore(
+    (listener) => {
+      cursorListeners.add(listener)
+      return () => cursorListeners.delete(listener)
+    },
+    () => cursorPosition,
+    () => cursorPosition,
+  )
+  return <span>Ln {active ? position.line : '-'}, Col {active ? position.column : '-'}</span>
+}
+
+function FooterContent({
   document,
-  line,
-  column,
   compilationOpen,
   onToggleCompilation,
   languageServerStatus,
@@ -13,8 +33,6 @@ export function Footer({
   onRestartDocumentWatcher,
 }: {
   document?: EditorDocument
-  line: number
-  column: number
   compilationOpen: boolean
   onToggleCompilation(): void
   languageServerStatus: LanguageServerStatus
@@ -30,7 +48,7 @@ export function Footer({
   return (
     <footer className="app-footer">
       <div className="footer-details">
-        <span>Ln {document ? line : '-'}, Col {document ? column : '-'}</span>
+        <CursorPosition active={Boolean(document)} />
         <span className="footer-separator" aria-hidden="true" />
         <span className="footer-repository" title={document?.repoName ?? 'No repository'}>
           {document?.repoName ?? 'No repository'}
@@ -114,4 +132,39 @@ export function Footer({
       </div>
     </footer>
   )
+}
+
+const MemoizedFooter = memo(FooterContent, (previous, next) => (
+  previous.document?.id === next.document?.id
+  && previous.document?.repoName === next.document?.repoName
+  && previous.document?.compileState === next.document?.compileState
+  && previous.document?.compileDurationMs === next.document?.compileDurationMs
+  && previous.compilationOpen === next.compilationOpen
+  && previous.languageServerStatus === next.languageServerStatus
+  && previous.documentWatchStatus === next.documentWatchStatus
+))
+
+type FooterProps = ComponentProps<typeof FooterContent>
+
+export function Footer(props: FooterProps) {
+  const callbacksRef = useRef({
+    onToggleCompilation: props.onToggleCompilation,
+    onRestartLanguageServer: props.onRestartLanguageServer,
+    onRestartDocumentWatcher: props.onRestartDocumentWatcher,
+  })
+  const stableCallbacksRef = useRef<Pick<
+    FooterProps,
+    'onToggleCompilation' | 'onRestartLanguageServer' | 'onRestartDocumentWatcher'
+  > | null>(null)
+  callbacksRef.current = {
+    onToggleCompilation: props.onToggleCompilation,
+    onRestartLanguageServer: props.onRestartLanguageServer,
+    onRestartDocumentWatcher: props.onRestartDocumentWatcher,
+  }
+  stableCallbacksRef.current ??= {
+    onToggleCompilation: () => callbacksRef.current.onToggleCompilation(),
+    onRestartLanguageServer: () => callbacksRef.current.onRestartLanguageServer(),
+    onRestartDocumentWatcher: () => callbacksRef.current.onRestartDocumentWatcher(),
+  }
+  return <MemoizedFooter {...props} {...stableCallbacksRef.current} />
 }

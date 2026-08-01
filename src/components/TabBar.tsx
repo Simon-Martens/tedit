@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type DragEvent, type PointerEvent } from 'react'
+import { memo, useEffect, useRef, useState, type DragEvent, type PointerEvent } from 'react'
 import { Icon } from './Icon'
 import type { EditorDocument } from '../types'
 
@@ -11,7 +11,7 @@ interface TabBarProps {
   onReorder(draggedId: string, targetId: string, after: boolean): void
 }
 
-export function TabBar({ documents, activeId, onActivate, onClose, onNew, onReorder }: TabBarProps) {
+function TabBarContent({ documents, activeId, onActivate, onClose, onNew, onReorder }: TabBarProps) {
   const [draggingId, setDraggingId] = useState<string>()
   const [holdingId, setHoldingId] = useState<string>()
   const [dropTarget, setDropTarget] = useState<{ id: string; after: boolean }>()
@@ -115,4 +115,41 @@ export function TabBar({ documents, activeId, onActivate, onClose, onNew, onReor
       </button>
     </nav>
   )
+}
+
+const MemoizedTabBar = memo(TabBarContent, (previous, next) => (
+  previous.activeId === next.activeId
+  && previous.documents.length === next.documents.length
+  && previous.documents.every((document, index) => {
+    const nextDocument = next.documents[index]
+    return document.id === nextDocument.id
+      && document.fileName === nextDocument.fileName
+      && document.isDirty === nextDocument.isDirty
+  })
+))
+
+export function TabBar(props: TabBarProps) {
+  const callbacksRef = useRef({
+    onActivate: props.onActivate,
+    onClose: props.onClose,
+    onNew: props.onNew,
+    onReorder: props.onReorder,
+  })
+  const stableCallbacksRef = useRef<Pick<
+    TabBarProps,
+    'onActivate' | 'onClose' | 'onNew' | 'onReorder'
+  > | null>(null)
+  callbacksRef.current = {
+    onActivate: props.onActivate,
+    onClose: props.onClose,
+    onNew: props.onNew,
+    onReorder: props.onReorder,
+  }
+  stableCallbacksRef.current ??= {
+    onActivate: (id) => callbacksRef.current.onActivate(id),
+    onClose: (id) => callbacksRef.current.onClose(id),
+    onNew: () => callbacksRef.current.onNew(),
+    onReorder: (draggedId, targetId, after) => callbacksRef.current.onReorder(draggedId, targetId, after),
+  }
+  return <MemoizedTabBar {...props} {...stableCallbacksRef.current} />
 }

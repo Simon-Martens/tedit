@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useDeferredValue, useEffect, useMemo, useState } from 'react'
 import { DocsView } from './components/DocsView'
 import { EmptyWorkspace } from './components/EmptyWorkspace'
-import { Footer } from './components/Footer'
+import { Footer, updateFooterCursorPosition } from './components/Footer'
 import { TabBar } from './components/TabBar'
 import { Toolbar } from './components/Toolbar'
 import { Workspace } from './components/Workspace'
@@ -26,7 +26,6 @@ import { reportError } from './lib/logging'
 function App() {
   const editor = useEditorDocuments()
   const settings = useSettings()
-  const [cursorPosition, setCursorPosition] = useState({ line: 1, column: 1 })
   const [docsOpen, setDocsOpen] = useState(false)
   const [docsMounted, setDocsMounted] = useState(false)
   const compilation = useCompilationView(editor.activeDocument, settings.automaticErrorPopupEnabled)
@@ -57,6 +56,19 @@ function App() {
     sessionKey: desktopSession.filePathsKey,
   })
   const previewRoots = usePreviewRootDiscovery(editor)
+  const deferredPdfFilenameDocument = useDeferredValue(editor.activeDocument)
+  const pdfFilenameDocument = deferredPdfFilenameDocument?.id === editor.activeDocument?.id
+    ? deferredPdfFilenameDocument
+    : editor.activeDocument
+  const pdfFileName = useMemo(() => (
+    pdfFilenameDocument ? createPdfFilename(pdfFilenameDocument) : undefined
+  ), [
+    pdfFilenameDocument?.id,
+    pdfFilenameDocument?.sourceRevision,
+    pdfFilenameDocument?.fileName,
+    pdfFilenameDocument?.repoCommit,
+    pdfFilenameDocument?.fallbackUuid,
+  ])
   const closeDocument = (id: string) => editor.closeDocument(
     id,
     () => bibliographies.prepareDocumentClose(id),
@@ -100,7 +112,7 @@ function App() {
   })
 
   useEffect(() => {
-    setCursorPosition({ line: 1, column: 1 })
+    updateFooterCursorPosition(1, 1)
   }, [editor.activeDocument?.id])
 
   return (
@@ -118,7 +130,7 @@ function App() {
       />
       <Toolbar
         document={editor.activeDocument}
-        pdfFileName={editor.activeDocument ? createPdfFilename(editor.activeDocument) : undefined}
+        pdfFileName={pdfFileName}
         onOpen={() => void files.openFile()}
         onSave={() => void files.saveFile()}
         docsOpen={docsOpen}
@@ -157,17 +169,17 @@ function App() {
       {editor.activeDocument ? (
         <Workspace
           document={editor.activeDocument}
+          pdfFileName={pdfFileName!}
           previewRoots={previewRoots.roots}
           onPreviewRootChange={(filePath) => editor.changePreviewRoot(editor.activeDocument!, filePath)}
           onSourceChange={(source) => editor.changeSource(editor.activeDocument!, source)}
           vimEnabled={settings.vimEnabled}
           previewPositions={sourcePreviewSync.positions}
           previewStatus={sourcePreviewSync.status}
-          sourceCursorLocation={sourcePreviewSync.sourceCursorLocation}
           sourceReveal={sourcePreviewSync.sourceReveal}
           onCursorPositionChange={sourcePreviewSync.locate}
           onPreviewPoint={sourcePreviewSync.revealPreviewSource}
-          onCursorChange={(line, column) => setCursorPosition({ line, column })}
+          onCursorChange={updateFooterCursorPosition}
           showPreviewPosition={settings.showPreviewPosition}
           autoScrollEnabled={settings.autoScrollEnabled}
           lightThemeEnabled={settings.lightThemeEnabled}
@@ -186,8 +198,6 @@ function App() {
       )}
       <Footer
         document={editor.activeDocument}
-        line={cursorPosition.line}
-        column={cursorPosition.column}
         compilationOpen={compilation.open}
         onToggleCompilation={compilation.toggle}
         languageServerStatus={languageServer.status}

@@ -19,13 +19,13 @@ function clamp(value: number, minimum: number, maximum: number) {
 
 export function Workspace({
   document,
+  pdfFileName,
   previewRoots,
   onPreviewRootChange,
   onSourceChange,
   vimEnabled,
   previewPositions,
   previewStatus,
-  sourceCursorLocation,
   sourceReveal,
   onCursorPositionChange,
   onPreviewPoint,
@@ -44,13 +44,13 @@ export function Workspace({
   languageServerDocuments,
 }: {
   document: EditorDocument
+  pdfFileName: string
   previewRoots?: PreviewRoot[]
   onPreviewRootChange(filePath: string): void
   onSourceChange(value: string): void
   vimEnabled: boolean
   previewPositions: PreviewPosition[]
   previewStatus: SourceSyncStatus
-  sourceCursorLocation?: SourceCursorLocation
   sourceReveal?: PreviewSourceReveal
   onCursorPositionChange(location: SourceCursorLocation): void
   onPreviewPoint(position: PreviewPosition): void
@@ -73,6 +73,14 @@ export function Workspace({
   const [bibliographyMaximized, setBibliographyMaximized] = useState(false)
   const workspaceRef = useRef<HTMLElement>(null)
   const editorStackRef = useRef<HTMLDivElement>(null)
+  const previewRootChangeRef = useRef(onPreviewRootChange)
+  const previewPointRef = useRef(onPreviewPoint)
+  const stablePreviewRootChangeRef = useRef<((filePath: string) => void) | null>(null)
+  const stablePreviewPointRef = useRef<((position: PreviewPosition) => void) | null>(null)
+  previewRootChangeRef.current = onPreviewRootChange
+  previewPointRef.current = onPreviewPoint
+  stablePreviewRootChangeRef.current ??= (filePath) => previewRootChangeRef.current(filePath)
+  stablePreviewPointRef.current ??= (position) => previewPointRef.current(position)
   const layoutVersion = leftPanePercent
     + sourceEditorPercent
     + (bibliographyMaximized ? 2000 : 0)
@@ -207,14 +215,15 @@ export function Workspace({
       >
         <TypstPreview
           document={document}
+          pdfFileName={pdfFileName}
           previewRoots={previewRoots}
-          onPreviewRootChange={onPreviewRootChange}
+          onPreviewRootChange={stablePreviewRootChangeRef.current}
           positions={previewPositions}
           status={previewStatus}
           showPreviewPosition={showPreviewPosition}
           autoScrollEnabled={autoScrollEnabled}
           renderBackoffMs={previewRenderBackoffMs}
-          onPreviewPoint={onPreviewPoint}
+          onPreviewPoint={stablePreviewPointRef.current}
           key={`${document.id}:${document.previewRootPath ?? document.filePath ?? ''}`}
         />
         {compilationOpen && <CompilationPane document={document} />}
