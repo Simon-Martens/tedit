@@ -13,6 +13,12 @@ import {
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import { createPdfFilename } from '../lib/documents'
 import { reportError } from '../lib/logging'
+import {
+  WORD_PATTERN,
+  normalizeWord,
+  sourceSignature,
+  type SourceSignature,
+} from '../lib/sourceSignature'
 import type { EditorDocument, PreviewPosition, PreviewRoot, SourceCursorLocation } from '../types'
 import { PdfToolbar, type PdfZoom } from './PdfToolbar'
 
@@ -39,14 +45,6 @@ interface TextToken {
   y: number
 }
 
-interface SourceSignature {
-  before: string[]
-  target: string
-  after: string[]
-  targetIndex: number
-  wordCount: number
-}
-
 interface PageRenderEntry {
   page: PDFPageProxy
   row: HTMLDivElement
@@ -67,64 +65,6 @@ interface PreviewRenderStatus {
   state: 'idle' | 'loading' | 'rendering' | 'ready' | 'error'
   url?: string
   message?: string
-}
-
-const WORD_PATTERN = /[\p{L}\p{N}\p{M}_]+/gu
-
-function normalizeWord(value: string) {
-  return value.normalize('NFKC').toLocaleLowerCase()
-}
-
-function utf8ByteToStringIndex(text: string, byteOffset: number) {
-  let bytes = 0
-  let index = 0
-  for (const character of text) {
-    const nextBytes = bytes + new TextEncoder().encode(character).length
-    if (nextBytes > byteOffset) break
-    bytes = nextBytes
-    index += character.length
-  }
-  return index
-}
-
-function sourceSignature(source: string, location: SourceCursorLocation): SourceSignature | undefined {
-  const lines = source.split(/\r?\n/)
-  let sourcePosition = location.cursor
-  const cursorLine = lines[location.cursor.line]
-  if (cursorLine === undefined || !/[\p{L}\p{N}\p{M}_]/u.test(cursorLine)) {
-    sourcePosition = location.lookup
-  }
-  if (cursorLine !== undefined && location.cursor.line === location.lookup.line) {
-    const cursorIndex = utf8ByteToStringIndex(cursorLine, location.cursor.character)
-    for (const link of cursorLine.matchAll(/#link\s*\([^)]*\)\s*\[([^\]]*)\]/g)) {
-      const start = link.index ?? 0
-      const bodyStart = start + link[0].lastIndexOf(link[1])
-      if (cursorIndex >= start && cursorIndex < bodyStart) sourcePosition = location.lookup
-    }
-  }
-  const line = lines[sourcePosition.line]
-  if (line === undefined) return undefined
-  const index = utf8ByteToStringIndex(line, sourcePosition.character)
-  const words = [...line.matchAll(WORD_PATTERN)]
-  if (!words.length) return undefined
-  let targetIndex = words.findIndex((word) => {
-    const start = word.index ?? 0
-    return start <= index && index <= start + word[0].length
-  })
-  if (targetIndex < 0) {
-    targetIndex = words.reduce((closest, word, candidateIndex) => (
-      Math.abs((word.index ?? 0) - index) < Math.abs((words[closest].index ?? 0) - index)
-        ? candidateIndex
-        : closest
-    ), 0)
-  }
-  return {
-    before: words.slice(Math.max(0, targetIndex - 2), targetIndex).map((word) => normalizeWord(word[0])),
-    target: normalizeWord(words[targetIndex][0]),
-    after: words.slice(targetIndex + 1, targetIndex + 3).map((word) => normalizeWord(word[0])),
-    targetIndex,
-    wordCount: words.length,
-  }
 }
 
 function refinedTextY(tokens: TextToken[], signature: SourceSignature, anchor?: { x: number; y: number }) {

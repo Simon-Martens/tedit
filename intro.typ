@@ -1,8 +1,8 @@
 Willkommen in Typst! Die unmittelbare Texteinheit von Typst ist ein Absatz. Sobald wir in ein leeres Dokument schreiben, haben wir bereits einen Absatz begonnen. Das hier ist ein Absatz.
-Ein einziger Zeilenumbruch in unserer Quelldatei genügt nicht, um Absätze voneinander zu trennen. 
+Ein einziger Zeilenumbruch in unserem Code genügt nicht, um Absätze voneinander zu trennen. 
 Nicht einmal, um einen Zeilenumbruch zu erzwingen. 
 Stattdessen wird ein einfacher Zeilenumbruch von Typst wie ein einfaches Spatium gelesen.
-Das Ganze dient dazu, den Text im `source code` besser strukturieren zu können.
+Das Ganze dient dazu, den Text im Quelltext besser strukturieren zu können.
 Man kann so einzelne kleine Einheiten, wie Sätze oder Gedanken bilden, die sich nicht sofort im ausgegebenen Dokument niederschlagen.
 Nur für sich selber sozusagen.
 Und außerdem lässt es sich so leichter im `code` navigieren.
@@ -19,7 +19,7 @@ Der manuelle Zeilenumbruch ist selten nötig, vielleicht am ehesten beispielswei
     + aber einer geordneten Liste,
     + deren Elemente mit einem Plus ('+') beginnen.
 
-Wir kennen bisher aulso zwei automatisch erkannte Blöcke: Absätze und Listen.
+Wir kennen jetzt also zwei automatisch erkannte Blöcke: Absätze und Listen.
 
 = Andere Blöcke, $<-$ Überschrift erster Ebene ('=')
 == die verwendet werden können $<-$ Überschrift zweiter Ebene ('==' usw.)
@@ -32,6 +32,7 @@ Wir kennen bisher aulso zwei automatisch erkannte Blöcke: Absätze und Listen.
 Kommentare stehen nur im code und werden nicht ausgegeben.
 Das hier steht nicht im Dokument.
 Sie sind ganz hilfreich für eigene kleine Anmerkungen oder zum Korrekturlesen.  */
+
 
 ```
 Code ist auch ein Block mit einem Shortcut. In einem Code-Block gibt es keine reservierten oder besonderen Zeichen:
@@ -61,7 +62,7 @@ haben wir schon die bedeutsamste Neuerung  im Vergleich zu herkömmlichen Textfo
 Die _Funktion_ `#pagebreak()` löst einen erzwungenen Seitenumbruch aus; und zwar genau an der Stelle, an welcher sie aufgerufen wird.
 Die Mögichkeit, mit Code zu arbeiten, macht Typst erst interessant und nützlich.
 Die eingestreuten Anweisungen erlauben uns, das Dokument genau so zu gestalten, wie wir es haben wollen.
-Die Möglichkeit, Seiten, Absätze und Text zu programmieren (in \~Etwa analog zu Seiten-, Absatz- und Zeichenformaten), gibt Typst einen viel größeren Funktionumfang als _WYSIWYG-Editoren_#footnote[_What You See Is What You Get_ -- wie Word, LibreOffice oder InDesign. Ganz anders hier: hier wird Quellcode geschrieben, and what you get is what you don't see -- it's what you tell the program to do.].
+Die Möglichkeit, Seiten, Absätze und Text zu programmieren (in \~Etwa analog zu Seiten-, Absatz- und Zeichenformaten), gibt Typst einen viel größeren Funktionumfang als _WYSIWYG-Editoren_#footnote[_What You See Is What You Get_ -- wie Word, LibreOffice oder InDesign. Ganz anders hier: hier wird Quellcode geschrieben, and what you get is what you don't see -- it's what you tell the program to do.]. 
 
 Damit ist ein weiteres Sonderzeichen, die Raute '\#' eingeführt. Die Raute signalisiert: jetzt kommt Code, jetzt kommt eine Funktion, die ausgeführt werden soll. Auch sie müssen wir _escapen_ wenn wir sie als Zeichen benutzen wollen.
 

@@ -172,8 +172,8 @@ export function SettingsMenu({
           </label>
           <label className="setting-row">
             <span>
-              <strong>Autoscroll</strong>
-              <small>Follow the editor position in the PDF</small>
+              <strong>Autoscrolling</strong>
+              <small>Keep the preview in view while editing</small>
             </span>
             <input
               type="checkbox"

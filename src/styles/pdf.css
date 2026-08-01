@@ -215,6 +215,10 @@
   stroke-width: 0.75px;
 }
 
+.typst-preview-document .tedit-page-backgrounds {
+  pointer-events: none;
+}
+
 .typst-preview-document .tsel,
 .typst-preview-document .tsel span {
   position: fixed;
@@ -233,10 +237,6 @@
   background: rgb(125 185 222 / 63%);
 }
 
-.typst-preview-viewport.tedit-scrolling .tsel {
-  display: none;
-}
-
 .typst-preview-document .pseudo-link {
   pointer-events: all;
   cursor: pointer;
@@ -245,10 +245,6 @@
 
 .typst-preview-document .typst-page {
   cursor: text;
-}
-
-.typst-preview-document .typst-page:not(.tedit-page-hidden) {
-  will-change: opacity;
 }
 
 .typst-preview-document .typst-page.tedit-page-hidden {
@@ -388,10 +384,37 @@
     drop-shadow(1px 2px 2px hsl(347deg 55% 20% / 18%));
   pointer-events: none;
   transform: translate(var(--marker-x, 0), var(--marker-y, 0)) translate(-50%, -50%);
-  transition: transform 100ms ease-out;
+  transition: opacity 220ms ease-out;
 }
 
 .pdf-location-marker.visible {
+  opacity: 1;
+}
+
+.typst-block-marker {
+  position: absolute;
+  z-index: 4;
+  box-sizing: border-box;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.typst-block-marker::before {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 6px;
+  border-radius: 2px;
+  background: repeating-linear-gradient(
+    135deg,
+    #b98bd4 0 1.5px,
+    #eadcf5 1.5px 3px
+  );
+  content: '';
+}
+
+.typst-block-marker.visible {
   opacity: 1;
 }
 

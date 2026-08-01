@@ -124,7 +124,10 @@ function findRenderableOffset(text: string, preferredOffset: number) {
           ? candidate
           : closest
       ))
-      return textEncoder.encode(text.slice(0, bodyStart + (bodyCharacter.index ?? 0))).length
+      return textEncoder.encode(text.slice(
+        0,
+        bodyStart + (bodyCharacter.index ?? 0) + bodyCharacter[0].length,
+      )).length
     }
   }
 
@@ -136,7 +139,7 @@ function findRenderableOffset(text: string, preferredOffset: number) {
       ? candidate
       : closest
   ))
-  return textEncoder.encode(text.slice(0, nearest.index)).length
+  return textEncoder.encode(text.slice(0, (nearest.index ?? 0) + nearest[0].length)).length
 }
 
 export function SourcePane({

@@ -21,6 +21,7 @@ export function useSourcePreviewSync(
   const pendingLocationRef = useRef<SourceCursorLocation | undefined>(undefined)
   const locateTimerRef = useRef<number | undefined>(undefined)
   const requestIdRef = useRef(0)
+  const appliedRequestIdRef = useRef(0)
   const memoryFiles = documents.flatMap((openDocument) => openDocument.filePath ? [{
     filePath: openDocument.filePath,
     source: openDocument.source,
@@ -42,6 +43,7 @@ export function useSourcePreviewSync(
     lastLocationRef.current = undefined
     setSourceReveal(undefined)
     requestIdRef.current = 0
+    appliedRequestIdRef.current = 0
     setPositions([])
     if (!document) {
       setStatus(DISABLED_STATUS)
@@ -54,13 +56,13 @@ export function useSourcePreviewSync(
     }
 
     const removeJumpListener = desktop.onSourceJump((jump) => {
-      if (jump.documentId === document.id && jump.requestId === requestIdRef.current) {
-        setPositions((current) => current.length === jump.positions.length
-          && current.every((position, index) => (
-            position.page === jump.positions[index].page
-            && position.x === jump.positions[index].x
-            && position.y === jump.positions[index].y
-          )) ? current : jump.positions)
+      if (
+        jump.documentId === document.id
+        && jump.requestId === requestIdRef.current
+        && jump.requestId !== appliedRequestIdRef.current
+      ) {
+        appliedRequestIdRef.current = jump.requestId
+        setPositions(jump.positions)
       }
     })
     const removeStatusListener = desktop.onSourceSyncStatus((nextStatus) => {
