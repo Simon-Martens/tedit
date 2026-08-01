@@ -10,7 +10,7 @@ Und außerdem lässt es sich so leichter im `code` navigieren.
 Mit einem doppeltem Umbruch kommt hier der zweite Absatz. 
 
 Einen manuellen Zeilenumbruch kann man erzwingen, indem man einen Backslash ('\\') ans Ende der Zeile setzt. So: \
-Der manuelle Zeilenumbruch ist selten nötig, vielleicht am ehesten beispielsweise bei Gedichten  oder anderen Phänomenen der Literatur, wenn der Zeilenumbruch semantisch bedeutsam und klar vom Absatzumbruch unterschieden (und keine Frage des Textsatzes) ist.  Was
+Der manuelle Zeilenumbruch ist selten nötig, vielleicht am ehesten beispielsweise bei Gedichten  oder anderen Phänomenen der Literatur, wenn der Zeilenumbruch semantisch bedeutsam und klar vom Absatzumbruch unterschieden (und keine Frage des Textsatzes) ist. 
 
 - Alle anderen Blöcke, die nicht Absätze sind, wie Überschriften, Listen, Blockzitate, Formeln etc. haben eigene Satzregeln und werden automatisch erkannt oder gekennzeichnet. \
     Das hier ist ein eingezogener Abschnitt. Er beginnt mit einem Tabulator.
@@ -25,7 +25,7 @@ Wir kennen jetzt also zwei automatisch erkannte Blöcke: Absätze und Listen.
 == die verwendet werden können $<-$ Überschrift zweiter Ebene ('==' usw.)
 
 / Term: Das hier ist die Definition eines Begriffs, auch dafür hat Typst eine Kurzform
-/ Benutzung:  Dazu schreibt man erst einen forward Slash ('/') an den Satzanfang, ein Spatium, den Term, der definiert werden soll und schließlich einen Doppelpunkt, gefolgt von der Definition. Verwendet wird das vor allem in der Mathematik oder Naturwissenschaft. Was
+/ Benutzung:  Dazu schreibt man erst einen forward Slash ('/') an den Satzanfang, ein Spatium, den Term, der definiert werden soll und schließlich einen Doppelpunkt, gefolgt von der Definition. Verwendet wird das vor allem in der Mathematik oder Naturwissenschaft. 
 
 // Ein besonderer Block ist der Kommentar
 /* Dieser hier ist sogar mehrzeilig.
@@ -62,7 +62,7 @@ haben wir schon die bedeutsamste Neuerung  im Vergleich zu herkömmlichen Textfo
 Die _Funktion_ `#pagebreak()` löst einen erzwungenen Seitenumbruch aus; und zwar genau an der Stelle, an welcher sie aufgerufen wird.
 Die Mögichkeit, mit Code zu arbeiten, macht Typst erst interessant und nützlich.
 Die eingestreuten Anweisungen erlauben uns, das Dokument genau so zu gestalten, wie wir es haben wollen.
-Die Möglichkeit, Seiten, Absätze und Text zu programmieren (in \~Etwa analog zu Seiten-, Absatz- und Zeichenformaten), gibt Typst einen viel größeren Funktionumfang als _WYSIWYG-Editoren_#footnote[_What You See Is What You Get_ -- wie Word, LibreOffice oder InDesign. Ganz anders hier: hier wird Quellcode geschrieben, and what you get is what you don't see -- it's what you tell the program to do.]. 
+Die Möglichkeit, Seiten, Absätze und Text zu programmieren (in \~Etwa analog zu Seiten-, Absatz- und Zeichenformaten), gibt Typst einen viel größeren Funktionumfang als _WYSIWYG-Editoren_#footnote[_What You See Is What You Get_ -- wie Word, LibreOffice oder InDesign. Ganz anders hier: hier wird Quellcode geschrieben, and what you get is what you don't see -- it's what you tell the program to do.].
 
 Damit ist ein weiteres Sonderzeichen, die Raute '\#' eingeführt. Die Raute signalisiert: jetzt kommt Code, jetzt kommt eine Funktion, die ausgeführt werden soll. Auch sie müssen wir _escapen_ wenn wir sie als Zeichen benutzen wollen.
 

@@ -3,7 +3,7 @@ import { formatError } from '../lib/documents'
 import { toLanguageServerDocuments } from '../lib/languageServerDocuments'
 import type { EditorDocument, LanguageServerStatus } from '../types'
 
-const PDF_COMPILE_SETTLE_MS = 2_500
+const PDF_COMPILE_SETTLE_MS = 500
 const PDF_COMPILE_IDLE_TIMEOUT_MS = 1_000
 
 export function useTypstCompilation(

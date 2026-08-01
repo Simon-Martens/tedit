@@ -50,6 +50,8 @@ class TinymistService {
     this.generation = 0
     this.operationQueue = Promise.resolve()
     this.lifecycleGeneration = 0
+    this.previewRevealInFlight = false
+    this.pendingPreviewReveal = undefined
   }
 
   status(documentId, state, message) {
@@ -201,14 +203,17 @@ class TinymistService {
     }
     if (
       message.event === 'editorScrollTo'
-      && this.previewRevealRequests > 0
+      && this.previewRevealInFlight
       && Array.isArray(message.start)
       && Array.isArray(message.end)
     ) {
-      this.previewRevealRequests -= 1
-      if (this.previewRevealRequests > 0) return
+      this.previewRevealInFlight = false
       clearTimeout(this.previewRevealTimer)
       this.previewRevealTimer = undefined
+      if (this.pendingPreviewReveal) {
+        this.sendPendingPreviewReveal()
+        return
+      }
       this.sendEvent('tinymist:source-reveal', {
         documentId,
         filePath: this.runtimeBacked ? undefined : message.filepath,
@@ -271,11 +276,24 @@ class TinymistService {
       || !Number.isFinite(x)
       || !Number.isFinite(y)
     ) return
-    this.previewRevealRequests = (this.previewRevealRequests ?? 0) + 1
+    this.pendingPreviewReveal = { page, x, y }
+    this.sendPendingPreviewReveal()
+  }
+
+  sendPendingPreviewReveal() {
+    if (
+      this.previewRevealInFlight
+      || !this.pendingPreviewReveal
+      || this.dataSocket?.readyState !== WebSocket.OPEN
+    ) return
+    const { page, x, y } = this.pendingPreviewReveal
+    this.pendingPreviewReveal = undefined
+    this.previewRevealInFlight = true
     clearTimeout(this.previewRevealTimer)
     this.previewRevealTimer = setTimeout(() => {
-      this.previewRevealRequests = 0
+      this.previewRevealInFlight = false
       this.previewRevealTimer = undefined
+      this.sendPendingPreviewReveal()
     }, 2_000)
     this.dataSocket.send(`src-point ${JSON.stringify({ page_no: page, x, y })}`)
   }
@@ -324,7 +342,8 @@ class TinymistService {
     this.memoryUpdateSettleTimer = undefined
     clearTimeout(this.previewRevealTimer)
     this.previewRevealTimer = undefined
-    this.previewRevealRequests = 0
+    this.previewRevealInFlight = false
+    this.pendingPreviewReveal = undefined
     this.memoryUpdatePending = false
     const child = this.child
     this.child = undefined
@@ -350,7 +369,8 @@ class TinymistService {
     this.memoryUpdateSettleTimer = undefined
     clearTimeout(this.previewRevealTimer)
     this.previewRevealTimer = undefined
-    this.previewRevealRequests = 0
+    this.previewRevealInFlight = false
+    this.pendingPreviewReveal = undefined
     this.latestLocate = undefined
     const child = this.child
     const runtimeSourceFilePath = this.runtimeBacked ? this.sourceFilePath : undefined

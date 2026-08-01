@@ -971,8 +971,8 @@ function TypstPreviewContent({
         {pageCount > 0 && visiblePreviewError && (
           <div className="preview-error" role="alert">{visiblePreviewError}</div>
         )}
-        <div className="typst-preview-content">
-          <div className="typst-preview-document" ref={documentRef} onClick={revealSource} />
+        <div className="typst-preview-content" onClick={revealSource}>
+          <div className="typst-preview-document" ref={documentRef} />
           <div className="typst-block-marker" ref={markerRef} aria-hidden="true" />
         </div>
         {!pageCount && (

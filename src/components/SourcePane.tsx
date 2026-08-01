@@ -207,7 +207,6 @@ export function SourcePane({
   const pendingCursorRef = useRef<{ lineNumber: number; column: number } | undefined>(undefined)
   const pendingSourceRef = useRef<string | undefined>(undefined)
   const applyingExternalSourceRef = useRef(false)
-  const lastEditAtRef = useRef(0)
   const documentRef = useRef(document)
   const languageServerDocumentsRef = useRef(languageServerDocuments)
   const defaultSourcesRef = useRef(new Map<string, string>())
@@ -246,7 +245,6 @@ export function SourcePane({
     if (applyingExternalSourceRef.current) return
     const source = value ?? ''
     pendingSourceRef.current = source
-    lastEditAtRef.current = performance.now()
     sourceChangeCallbackRef.current(source)
   }
 
@@ -256,7 +254,6 @@ export function SourcePane({
       !editor
       || !sourceReveal
       || (sourceReveal.filePath && sourceReveal.filePath !== document.filePath)
-      || performance.now() - lastEditAtRef.current < 500
     ) return
     const selection = {
       startLineNumber: sourceReveal.start.line + 1,
