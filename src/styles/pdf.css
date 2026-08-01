@@ -233,6 +233,10 @@
   background: rgb(125 185 222 / 63%);
 }
 
+.typst-preview-viewport.tedit-scrolling .tsel {
+  display: none;
+}
+
 .typst-preview-document .pseudo-link {
   pointer-events: all;
   cursor: pointer;
@@ -241,6 +245,18 @@
 
 .typst-preview-document .typst-page {
   cursor: text;
+}
+
+.typst-preview-document .typst-page:not(.tedit-page-hidden) {
+  will-change: opacity;
+}
+
+.typst-preview-document .typst-page.tedit-page-hidden {
+  visibility: hidden;
+}
+
+.typst-preview-document .tedit-page-background.tedit-page-hidden {
+  visibility: hidden;
 }
 
 .typst-preview-viewport .pdf-location-marker {

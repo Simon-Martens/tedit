@@ -1,4 +1,12 @@
-import { memo, useEffect, useRef, useState, type ComponentProps, type MouseEvent } from 'react'
+import {
+  memo,
+  useEffect,
+  useRef,
+  useState,
+  type ComponentProps,
+  type KeyboardEvent,
+  type MouseEvent,
+} from 'react'
 import { patchRoot } from '@myriaddreamin/typst.ts/render/svg/patch'
 import { reportError } from '../lib/logging'
 import type { EditorDocument, PreviewPosition, PreviewRoot, SourceSyncStatus } from '../types'
@@ -9,8 +17,11 @@ const PAGE_GAP_POINTS = 10
 const RENDER_BACKOFF_LIMIT_MS = 5_000
 const RAPID_UPDATE_WINDOW_MS = 700
 const MAX_WORKER_RECOVERY_ATTEMPTS = 3
-const VIEWPORT_SETTLE_MS = 160
+const VIEWPORT_SETTLE_MS = 240
 const VIEWPORT_OVERSCAN = 2
+const PAINT_OVERSCAN = 0.1
+const USER_SCROLL_SUPPRESSION_MS = 750
+const SCROLL_SEMANTICS_SETTLE_MS = 120
 const SVG_NAMESPACE = 'http://www.w3.org/2000/svg'
 const pageLayoutSignatures = new WeakMap<SVGSVGElement, string>()
 
@@ -146,12 +157,22 @@ function decoratePages(svg: SVGSVGElement, createDecorations = true) {
   }
 
   if (createDecorations) {
-    const background = window.document.createElementNS(SVG_NAMESPACE, 'path')
-    background.classList.add('tedit-page-decoration', 'tedit-page-background')
-    background.setAttribute('d', layouts.map((page) => (
-      `M${page.x} ${page.y}h${page.width}v${page.height}h-${page.width}z`
-    )).join(''))
-    svg.insertBefore(background, firstPage)
+    const backgrounds = window.document.createElementNS(SVG_NAMESPACE, 'svg')
+    backgrounds.classList.add('tedit-page-decoration', 'tedit-page-backgrounds')
+    backgrounds.setAttribute('viewBox', `0 0 ${width} ${y}`)
+    backgrounds.setAttribute('width', String(width))
+    backgrounds.setAttribute('height', String(y))
+    for (const [index, page] of layouts.entries()) {
+      const background = window.document.createElementNS(SVG_NAMESPACE, 'rect')
+      background.classList.add('tedit-page-background')
+      background.dataset.pageNumber = String(index)
+      background.setAttribute('x', String(page.x))
+      background.setAttribute('y', String(page.y))
+      background.setAttribute('width', String(page.width))
+      background.setAttribute('height', String(page.height))
+      backgrounds.append(background)
+    }
+    svg.insertBefore(backgrounds, firstPage)
     svg.insertBefore(clips!, firstPage)
   }
 
@@ -193,6 +214,8 @@ function TypstPreviewContent({
   const [pageCount, setPageCount] = useState(0)
   const [zoom, setZoom] = useState<PdfZoom>('width')
   const [renderedVersion, setRenderedVersion] = useState(0)
+  const [documentRenderedVersion, setDocumentRenderedVersion] = useState(0)
+  const [autoScrollRetryVersion, setAutoScrollRetryVersion] = useState(0)
   const [workerGeneration, setWorkerGeneration] = useState(0)
   const [partialRenderingDisabled, setPartialRenderingDisabled] = useState(false)
   const [previewError, setPreviewError] = useState<string>()
@@ -214,10 +237,13 @@ function TypstPreviewContent({
   const updateIdleRef = useRef<number | undefined>(undefined)
   const scrollFrameRef = useRef<number | undefined>(undefined)
   const viewportTimerRef = useRef<number | undefined>(undefined)
+  const autoScrollTimerRef = useRef<number | undefined>(undefined)
+  const scrollSemanticsTimerRef = useRef<number | undefined>(undefined)
   const viewportRenderPendingRef = useRef(false)
   const activeRenderWindowKeyRef = useRef<string | undefined>(undefined)
   const lastRenderedWindowKeyRef = useRef<string | undefined>(undefined)
   const lastAutoScrollRef = useRef(0)
+  const lastUserScrollRef = useRef(Number.NEGATIVE_INFINITY)
   const refreshOnWorkerStartRef = useRef(false)
   const awaitingFreshSnapshotRef = useRef(false)
   const lastDocumentUpdateAtRef = useRef(0)
@@ -226,6 +252,9 @@ function TypstPreviewContent({
   const workerRecoveryAttemptsRef = useRef(0)
   const workerRecoveryTimerRef = useRef<number | undefined>(undefined)
   const pageLayoutsRef = useRef<PreviewPageLayout[]>([])
+  const pageBackgroundsRef = useRef<SVGRectElement[]>([])
+  const paintedPageRangeRef = useRef<{ first: number; last: number } | undefined>(undefined)
+  const previewSelectionActiveRef = useRef(false)
   const partialRenderingDisabledRef = useRef(partialRenderingDisabled)
   const statusError = status.documentId === document.id && status.state === 'error' ? status.message : undefined
   const effectivePreviewError = previewError ?? statusError
@@ -306,6 +335,65 @@ function TypstPreviewContent({
       },
       key: `${firstPageIndex}:${lastPageIndex}`,
     }
+  }
+
+  const hasPreviewSelection = () => {
+    const selection = window.getSelection()
+    const preview = documentRef.current
+    if (!preview || !selection || selection.isCollapsed) return false
+    if (preview.contains(selection.anchorNode) || preview.contains(selection.focusNode)) return true
+    for (let index = 0; index < selection.rangeCount; index += 1) {
+      if (selection.getRangeAt(index).intersectsNode(preview)) return true
+    }
+    return false
+  }
+
+  const updatePageVisibility = (force = false, preserveAllPages = hasPreviewSelection()) => {
+    const viewport = viewportRef.current
+    const svg = documentRef.current?.firstElementChild as SVGSVGElement | null
+    const pages = pageLayoutsRef.current
+    if (!viewport || !svg || !pages.length) return
+    const svgRect = svg.getBoundingClientRect()
+    const viewportRect = viewport.getBoundingClientRect()
+    const documentHeight = Number(svg.dataset.height)
+    const scale = documentHeight > 0 ? svgRect.height / documentHeight : 0
+    if (!scale) return
+    let first = 0
+    let last = pages.length - 1
+    if (!preserveAllPages) {
+      const viewportHeight = viewportRect.height / scale
+      const visibleTop = (viewportRect.top - svgRect.top) / scale
+      first = Math.max(0, findFirstPageEndingAfter(pages, visibleTop - viewportHeight * PAINT_OVERSCAN))
+      last = Math.min(
+        pages.length - 1,
+        findLastPageStartingBefore(pages, visibleTop + viewportHeight * (PAINT_OVERSCAN + 1)),
+      )
+      if (first > last) {
+        first = 0
+        last = pages.length - 1
+      }
+    }
+    const current = paintedPageRangeRef.current
+    if (force || !current) {
+      for (const [index, page] of pages.entries()) {
+        const hidden = index < first || index > last
+        page.element.classList.toggle('tedit-page-hidden', hidden)
+        pageBackgroundsRef.current[index]?.classList.toggle('tedit-page-hidden', hidden)
+      }
+    } else if (current.first !== first || current.last !== last) {
+      for (let index = current.first; index <= current.last; index += 1) {
+        if (index >= first && index <= last) continue
+        pages[index]?.element.classList.add('tedit-page-hidden')
+        pageBackgroundsRef.current[index]?.classList.add('tedit-page-hidden')
+      }
+      for (let index = first; index <= last; index += 1) {
+        if (index >= current.first && index <= current.last) continue
+        pages[index]?.element.classList.remove('tedit-page-hidden')
+        pageBackgroundsRef.current[index]?.classList.remove('tedit-page-hidden')
+      }
+    }
+    paintedPageRangeRef.current = { first, last }
+    return { svgRect, viewportRect, documentHeight }
   }
 
   const renderViewport = () => {
@@ -472,6 +560,10 @@ function TypstPreviewContent({
           pageLayouts = decoratePages(currentSvg)
         }
         pageLayoutsRef.current = pageLayouts
+        pageBackgroundsRef.current = [...container.querySelectorAll<SVGRectElement>(
+          ':scope > svg > svg.tedit-page-backgrounds > rect.tedit-page-background',
+        )]
+        updatePageVisibility(true)
         appliedRequestIdRef.current = message.requestId
         lastRenderedWindowKeyRef.current = activeRenderWindowKeyRef.current
         workerRecoveryAttemptsRef.current = 0
@@ -487,6 +579,9 @@ function TypstPreviewContent({
         setPageNumber((current) => Math.max(1, Math.min(current, message.pages.length || 1)))
         setPreviewError(undefined)
         setRenderedVersion((current) => current + 1)
+        if (activeRenderKindRef.current === 'document') {
+          setDocumentRenderedVersion((current) => current + 1)
+        }
         const patchDurationMs = performance.now() - patchStartedAt
         if (import.meta.env.DEV && message.renderDurationMs + patchDurationMs > 16) {
           console.debug('Typst preview update', {
@@ -542,6 +637,8 @@ function TypstPreviewContent({
       activeRenderWindowKeyRef.current = undefined
       updatesRef.current = []
       pageLayoutsRef.current = []
+      pageBackgroundsRef.current = []
+      paintedPageRangeRef.current = undefined
       lastRenderedWindowKeyRef.current = undefined
       window.clearTimeout(updateTimerRef.current)
       updateTimerRef.current = undefined
@@ -551,6 +648,11 @@ function TypstPreviewContent({
       scrollFrameRef.current = undefined
       window.clearTimeout(viewportTimerRef.current)
       viewportTimerRef.current = undefined
+      window.clearTimeout(autoScrollTimerRef.current)
+      autoScrollTimerRef.current = undefined
+      window.clearTimeout(scrollSemanticsTimerRef.current)
+      scrollSemanticsTimerRef.current = undefined
+      viewportRef.current?.classList.remove('tedit-scrolling')
       viewportRenderPendingRef.current = false
       window.clearTimeout(workerRecoveryTimerRef.current)
       workerRecoveryTimerRef.current = undefined
@@ -559,6 +661,7 @@ function TypstPreviewContent({
 
   useEffect(() => {
     applyScale()
+    updatePageVisibility(true)
     scheduleViewportRender()
   }, [zoom, pageCount])
 
@@ -567,14 +670,40 @@ function TypstPreviewContent({
     if (!viewport) return
     const observer = new ResizeObserver(() => {
       applyScale()
+      updatePageVisibility(true)
       scheduleViewportRender()
     })
     observer.observe(viewport)
     return () => observer.disconnect()
   }, [pageCount, zoom])
 
+  useEffect(() => {
+    const preview = documentRef.current
+    if (!preview) return
+    const prepareSelection = () => {
+      previewSelectionActiveRef.current = true
+      updatePageVisibility(true, true)
+    }
+    const updateForSelection = () => {
+      const active = hasPreviewSelection()
+      if (active === previewSelectionActiveRef.current) return
+      previewSelectionActiveRef.current = active
+      updatePageVisibility(true, active)
+    }
+    preview.addEventListener('selectstart', prepareSelection)
+    window.document.addEventListener('selectionchange', updateForSelection)
+    return () => {
+      preview.removeEventListener('selectstart', prepareSelection)
+      window.document.removeEventListener('selectionchange', updateForSelection)
+    }
+  }, [])
+
   const pageLayouts = () => pageLayoutsRef.current
+  const markUserScroll = () => {
+    lastUserScrollRef.current = performance.now()
+  }
   const changePage = (page: number, behavior: ScrollBehavior = 'smooth') => {
+    markUserScroll()
     const nextPage = Math.max(1, Math.min(pageCount || 1, page || 1))
     const target = pageLayouts()[nextPage - 1]?.element
     const viewport = viewportRef.current
@@ -587,10 +716,9 @@ function TypstPreviewContent({
   }
 
   useEffect(() => {
-    const viewport = viewportRef.current
     const marker = markerRef.current
     const pages = pageLayouts()
-    if (!viewport || !marker || !positions.length || !pages.length) {
+    if (!marker || !positions.length || !pages.length) {
       marker?.classList.remove('visible')
       return
     }
@@ -601,11 +729,8 @@ function TypstPreviewContent({
     if (!page) return
     const pageRect = page.element.getBoundingClientRect()
     const documentRect = documentRef.current!.getBoundingClientRect()
-    const viewportRect = viewport.getBoundingClientRect()
     const pageWidth = page.width || pageRect.width
     const pageHeight = page.height || pageRect.height
-    const targetScrollTop = Math.max(0, viewport.scrollTop + pageRect.top - viewportRect.top
-      + (position.y / pageHeight) * pageRect.height - viewport.clientHeight * 0.35)
     marker.style.setProperty(
       '--marker-x',
       `${pageRect.left - documentRect.left + (position.x / pageWidth) * pageRect.width}px`,
@@ -615,34 +740,84 @@ function TypstPreviewContent({
       `${pageRect.top - documentRect.top + (position.y / pageHeight) * pageRect.height}px`,
     )
     marker.classList.toggle('visible', showPreviewPosition)
-    if (autoScrollEnabled && Math.abs(targetScrollTop - viewport.scrollTop) > 2) {
-      const now = performance.now()
-      viewport.scrollTo({
-        top: targetScrollTop,
-        behavior: now - lastAutoScrollRef.current < 180 ? 'auto' : 'smooth',
-      })
-      lastAutoScrollRef.current = now
-      setPageNumber(position.page)
+  }, [positions, renderedVersion, pageNumber, zoom, showPreviewPosition])
+
+  useEffect(() => {
+    window.clearTimeout(autoScrollTimerRef.current)
+    autoScrollTimerRef.current = undefined
+    const viewport = viewportRef.current
+    const pages = pageLayouts()
+    if (
+      !autoScrollEnabled
+      || !viewport
+      || !positions.length
+      || !pages.length
+    ) return
+    const suppressionRemaining = USER_SCROLL_SUPPRESSION_MS
+      - (performance.now() - lastUserScrollRef.current)
+    if (suppressionRemaining > 0) {
+      autoScrollTimerRef.current = window.setTimeout(() => {
+        autoScrollTimerRef.current = undefined
+        setAutoScrollRetryVersion((current) => current + 1)
+      }, Math.ceil(suppressionRemaining))
+      return
     }
-  }, [positions, renderedVersion, zoom, showPreviewPosition, autoScrollEnabled])
+    const position = positions.reduce((closest, candidate) => (
+      Math.abs(candidate.page - pageNumber) <= Math.abs(closest.page - pageNumber) ? candidate : closest
+    ))
+    const page = pages[position.page - 1]
+    if (!page) return
+    const pageRect = page.element.getBoundingClientRect()
+    const viewportRect = viewport.getBoundingClientRect()
+    const pageHeight = page.height || pageRect.height
+    const targetScrollTop = Math.max(0, viewport.scrollTop + pageRect.top - viewportRect.top
+      + (position.y / pageHeight) * pageRect.height - viewport.clientHeight * 0.35)
+    if (Math.abs(targetScrollTop - viewport.scrollTop) <= 2) return
+    const now = performance.now()
+    viewport.scrollTo({
+      top: targetScrollTop,
+      behavior: now - lastAutoScrollRef.current < 180 ? 'auto' : 'smooth',
+    })
+    lastAutoScrollRef.current = now
+    setPageNumber(position.page)
+  }, [positions, documentRenderedVersion, autoScrollRetryVersion, zoom, autoScrollEnabled])
 
   const trackVisiblePage = () => {
     if (scrollFrameRef.current !== undefined) return
     scrollFrameRef.current = requestAnimationFrame(() => {
       scrollFrameRef.current = undefined
-      const viewport = viewportRef.current
-      const svg = documentRef.current?.firstElementChild as SVGSVGElement | null
       const pages = pageLayouts()
-      if (!viewport || !svg || !pages.length) return
-      const svgRect = svg.getBoundingClientRect()
-      const documentHeight = Number(svg.dataset.height)
+      if (!pages.length) return
+      const geometry = updatePageVisibility()
+      if (!geometry) return
+      const { svgRect, viewportRect, documentHeight } = geometry
       if (!svgRect.height || !documentHeight) return
-      const marker = viewport.getBoundingClientRect().top + Math.min(80, viewport.clientHeight * 0.25)
+      const marker = viewportRect.top + Math.min(80, viewportRect.height * 0.25)
       const markerY = ((marker - svgRect.top) / svgRect.height) * documentHeight
       const visiblePage = Math.max(1, findLastPageStartingBefore(pages, markerY) + 1)
       setPageNumber((current) => current === visiblePage ? current : visiblePage)
       scheduleViewportRender()
     })
+  }
+
+  const noteUserScroll = () => {
+    markUserScroll()
+    const selection = window.getSelection()
+    const viewport = viewportRef.current
+    if (!viewport || (selection && !selection.isCollapsed)) return
+    viewport.classList.add('tedit-scrolling')
+    window.clearTimeout(scrollSemanticsTimerRef.current)
+    scrollSemanticsTimerRef.current = window.setTimeout(() => {
+      scrollSemanticsTimerRef.current = undefined
+      viewport.classList.remove('tedit-scrolling')
+    }, SCROLL_SEMANTICS_SETTLE_MS)
+  }
+
+  const noteScrollKey = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.altKey || event.ctrlKey || event.metaKey) return
+    if (['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' '].includes(event.key)) {
+      markUserScroll()
+    }
   }
 
   const revealSource = (event: MouseEvent<HTMLDivElement>) => {
@@ -744,7 +919,14 @@ function TypstPreviewContent({
           onPrint={printPdf}
         />
       </div>
-      <div className="preview-surface typst-preview-viewport" ref={viewportRef} onScroll={trackVisiblePage}>
+      <div
+        className="preview-surface typst-preview-viewport"
+        ref={viewportRef}
+        onScroll={trackVisiblePage}
+        onWheel={noteUserScroll}
+        onPointerDown={markUserScroll}
+        onKeyDown={noteScrollKey}
+      >
         {pageCount > 0 && visiblePreviewError && (
           <div className="preview-error" role="alert">{visiblePreviewError}</div>
         )}
