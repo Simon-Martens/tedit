@@ -302,6 +302,7 @@ function TypstPreviewContent({
   const updateTimerRef = useRef<number | undefined>(undefined)
   const updateIdleRef = useRef<number | undefined>(undefined)
   const scrollFrameRef = useRef<number | undefined>(undefined)
+  const postRenderFrameRef = useRef<number | undefined>(undefined)
   const viewportTimerRef = useRef<number | undefined>(undefined)
   const viewportRenderPendingRef = useRef(false)
   const activeRenderWindowKeyRef = useRef<string | undefined>(undefined)
@@ -628,6 +629,12 @@ function TypstPreviewContent({
           ':scope > svg > svg.tedit-page-backgrounds > rect.tedit-page-background',
         )]
         updatePageVisibility(true)
+        if (postRenderFrameRef.current !== undefined) cancelAnimationFrame(postRenderFrameRef.current)
+        postRenderFrameRef.current = requestAnimationFrame(() => {
+          postRenderFrameRef.current = undefined
+          updatePageVisibility(true)
+          scheduleViewportRender()
+        })
         appliedRequestIdRef.current = message.requestId
         lastRenderedWindowKeyRef.current = activeRenderWindowKeyRef.current
         workerRecoveryAttemptsRef.current = 0
@@ -708,6 +715,8 @@ function TypstPreviewContent({
       updateIdleRef.current = undefined
       if (scrollFrameRef.current !== undefined) cancelAnimationFrame(scrollFrameRef.current)
       scrollFrameRef.current = undefined
+      if (postRenderFrameRef.current !== undefined) cancelAnimationFrame(postRenderFrameRef.current)
+      postRenderFrameRef.current = undefined
       window.clearTimeout(viewportTimerRef.current)
       viewportTimerRef.current = undefined
       viewportRenderPendingRef.current = false
@@ -844,7 +853,7 @@ function TypstPreviewContent({
     } else if (targetY > guardBottom) {
       viewport.scrollTop += targetY - guardBottom
     }
-  }, [positions, autoScrollEnabled])
+  }, [positions, renderedVersion, zoom, autoScrollEnabled])
 
   const trackVisiblePage = () => {
     if (scrollFrameRef.current !== undefined) return
