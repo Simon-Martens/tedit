@@ -5,6 +5,8 @@ const { logFailure } = require('./logging.cjs')
 const defaultSettings = {
   vimEnabled: false,
   showPreviewPosition: false,
+  previewClickNavigationEnabled: true,
+  canvasPreviewEnabled: false,
   autoScrollEnabled: true,
   lightThemeEnabled: false,
   foldingEnabled: true,

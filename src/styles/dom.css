@@ -793,6 +793,17 @@ a:focus-visible {
   text-transform: uppercase;
 }
 
+.settings-section-title {
+  margin-top: 6px;
+  padding: 9px 6px 4px;
+  border-top: 1px solid #363830;
+  color: #8f9288;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
 .setting-row {
   display: flex;
   align-items: center;
@@ -805,6 +816,19 @@ a:focus-visible {
 
 .setting-row:hover {
   background: #292b25;
+}
+
+.setting-row.setting-disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.setting-row.setting-disabled:hover {
+  background: transparent;
+}
+
+.setting-row.setting-disabled input[type='checkbox'] {
+  cursor: not-allowed;
 }
 
 .setting-row > span {
@@ -1173,8 +1197,17 @@ a:focus-visible {
   color: #6f7468;
 }
 
+.theme-light .settings-section-title {
+  border-color: #dfe1d9;
+  color: #6f7468;
+}
+
 .theme-light .setting-row:hover {
   background: #eff0e9;
+}
+
+.theme-light .setting-row.setting-disabled:hover {
+  background: transparent;
 }
 
 .theme-light .setting-row small {

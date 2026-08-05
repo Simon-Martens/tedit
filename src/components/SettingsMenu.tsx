@@ -6,6 +6,10 @@ export function SettingsMenu({
   onVimEnabledChange,
   showPreviewPosition,
   onShowPreviewPositionChange,
+  previewClickNavigationEnabled,
+  onPreviewClickNavigationEnabledChange,
+  canvasPreviewEnabled,
+  onCanvasPreviewEnabledChange,
   autoScrollEnabled,
   onAutoScrollEnabledChange,
   lightThemeEnabled,
@@ -27,6 +31,10 @@ export function SettingsMenu({
   onVimEnabledChange(enabled: boolean): void
   showPreviewPosition: boolean
   onShowPreviewPositionChange(enabled: boolean): void
+  previewClickNavigationEnabled: boolean
+  onPreviewClickNavigationEnabledChange(enabled: boolean): void
+  canvasPreviewEnabled: boolean
+  onCanvasPreviewEnabledChange(enabled: boolean): void
   autoScrollEnabled: boolean
   onAutoScrollEnabledChange(enabled: boolean): void
   lightThemeEnabled: boolean
@@ -87,25 +95,6 @@ export function SettingsMenu({
               type="checkbox"
               checked={lightThemeEnabled}
               onChange={(event) => onLightThemeEnabledChange(event.target.checked)}
-            />
-          </label>
-          <label className="setting-row">
-            <span>
-              <strong>Preview backoff</strong>
-              <small>Wait after edits before rendering (ms)</small>
-            </span>
-            <input
-              className="setting-number"
-              type="number"
-              min={0}
-              max={5000}
-              step={50}
-              value={previewRenderBackoffMs}
-              onChange={(event) => {
-                if (Number.isFinite(event.target.valueAsNumber)) {
-                  onPreviewRenderBackoffMsChange(event.target.valueAsNumber)
-                }
-              }}
             />
           </label>
           <label className="setting-row">
@@ -174,15 +163,32 @@ export function SettingsMenu({
               onChange={(event) => onAutomaticErrorPopupEnabledChange(event.target.checked)}
             />
           </label>
-          <label className="setting-row">
+          <label className={`setting-row${canvasPreviewEnabled ? ' setting-disabled' : ''}`}>
             <span>
               <strong>Show position</strong>
-              <small>Display the PDF source marker</small>
+              <small>{canvasPreviewEnabled
+                ? 'Unavailable in canvas preview'
+                : 'Display the preview source marker'}</small>
             </span>
             <input
               type="checkbox"
               checked={showPreviewPosition}
+              disabled={canvasPreviewEnabled}
               onChange={(event) => onShowPreviewPositionChange(event.target.checked)}
+            />
+          </label>
+          <label className={`setting-row${canvasPreviewEnabled ? ' setting-disabled' : ''}`}>
+            <span>
+              <strong>Jump to source</strong>
+              <small>{canvasPreviewEnabled
+                ? 'Unavailable in canvas preview'
+                : 'Jump to source when clicking the preview'}</small>
+            </span>
+            <input
+              type="checkbox"
+              checked={previewClickNavigationEnabled}
+              disabled={canvasPreviewEnabled}
+              onChange={(event) => onPreviewClickNavigationEnabledChange(event.target.checked)}
             />
           </label>
           <label className="setting-row">
@@ -194,6 +200,37 @@ export function SettingsMenu({
               type="checkbox"
               checked={autoScrollEnabled}
               onChange={(event) => onAutoScrollEnabledChange(event.target.checked)}
+            />
+          </label>
+          <div className="settings-section-title">Performance</div>
+          <label className="setting-row">
+            <span>
+              <strong>Preview backoff</strong>
+              <small>Wait after edits before rendering (ms)</small>
+            </span>
+            <input
+              className="setting-number"
+              type="number"
+              min={0}
+              max={5000}
+              step={50}
+              value={previewRenderBackoffMs}
+              onChange={(event) => {
+                if (Number.isFinite(event.target.valueAsNumber)) {
+                  onPreviewRenderBackoffMsChange(event.target.valueAsNumber)
+                }
+              }}
+            />
+          </label>
+          <label className="setting-row">
+            <span>
+              <strong>Canvas preview</strong>
+              <small>Experimental raster preview with fewer DOM elements</small>
+            </span>
+            <input
+              type="checkbox"
+              checked={canvasPreviewEnabled}
+              onChange={(event) => onCanvasPreviewEnabledChange(event.target.checked)}
             />
           </label>
         </div>

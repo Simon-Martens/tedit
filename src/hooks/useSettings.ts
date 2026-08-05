@@ -21,6 +21,12 @@ export function useSettings() {
   const [showPreviewPosition, setShowPreviewPosition] = useState(() => (
     window.typstDesktop ? false : browserSetting('tedit.show-preview-position', false)
   ))
+  const [previewClickNavigationEnabled, setPreviewClickNavigationEnabled] = useState(() => (
+    window.typstDesktop ? true : browserSetting('tedit.preview-click-navigation', true)
+  ))
+  const [canvasPreviewEnabled, setCanvasPreviewEnabled] = useState(() => (
+    window.typstDesktop ? false : browserSetting('tedit.canvas-preview', false)
+  ))
   const [autoScrollEnabled, setAutoScrollEnabled] = useState(() => (
     window.typstDesktop ? true : browserSetting('tedit.autoscroll', true)
   ))
@@ -53,6 +59,16 @@ export function useSettings() {
   useEffect(() => {
     if (!window.typstDesktop) localStorage.setItem('tedit.show-preview-position', String(showPreviewPosition))
   }, [showPreviewPosition])
+
+  useEffect(() => {
+    if (!window.typstDesktop) {
+      localStorage.setItem('tedit.preview-click-navigation', String(previewClickNavigationEnabled))
+    }
+  }, [previewClickNavigationEnabled])
+
+  useEffect(() => {
+    if (!window.typstDesktop) localStorage.setItem('tedit.canvas-preview', String(canvasPreviewEnabled))
+  }, [canvasPreviewEnabled])
 
   useEffect(() => {
     if (!window.typstDesktop) localStorage.setItem('tedit.autoscroll', String(autoScrollEnabled))
@@ -90,6 +106,8 @@ export function useSettings() {
     window.typstDesktop?.getSettings().then((settings) => {
       setVimEnabled(settings.vimEnabled)
       setShowPreviewPosition(settings.showPreviewPosition)
+      setPreviewClickNavigationEnabled(settings.previewClickNavigationEnabled)
+      setCanvasPreviewEnabled(settings.canvasPreviewEnabled)
       setAutoScrollEnabled(settings.autoScrollEnabled)
       setLightThemeEnabled(settings.lightThemeEnabled)
       setFoldingEnabled(settings.foldingEnabled)
@@ -113,6 +131,8 @@ export function useSettings() {
   return {
     vimEnabled,
     showPreviewPosition,
+    previewClickNavigationEnabled,
+    canvasPreviewEnabled,
     autoScrollEnabled,
     lightThemeEnabled,
     foldingEnabled,
@@ -123,6 +143,16 @@ export function useSettings() {
     previewRenderBackoffMs,
     changeVimEnabled: (value: boolean) => changeSetting('vimEnabled', value, setVimEnabled),
     changeShowPreviewPosition: (value: boolean) => changeSetting('showPreviewPosition', value, setShowPreviewPosition),
+    changePreviewClickNavigationEnabled: (value: boolean) => changeSetting(
+      'previewClickNavigationEnabled',
+      value,
+      setPreviewClickNavigationEnabled,
+    ),
+    changeCanvasPreviewEnabled: (value: boolean) => changeSetting(
+      'canvasPreviewEnabled',
+      value,
+      setCanvasPreviewEnabled,
+    ),
     changeAutoScrollEnabled: (value: boolean) => changeSetting('autoScrollEnabled', value, setAutoScrollEnabled),
     changeLightThemeEnabled: (value: boolean) => changeSetting('lightThemeEnabled', value, setLightThemeEnabled),
     changeFoldingEnabled: (value: boolean) => changeSetting('foldingEnabled', value, setFoldingEnabled),

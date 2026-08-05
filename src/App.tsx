@@ -143,6 +143,10 @@ function App() {
         onVimEnabledChange={settings.changeVimEnabled}
         showPreviewPosition={settings.showPreviewPosition}
         onShowPreviewPositionChange={settings.changeShowPreviewPosition}
+        previewClickNavigationEnabled={settings.previewClickNavigationEnabled}
+        onPreviewClickNavigationEnabledChange={settings.changePreviewClickNavigationEnabled}
+        canvasPreviewEnabled={settings.canvasPreviewEnabled}
+        onCanvasPreviewEnabledChange={settings.changeCanvasPreviewEnabled}
         autoScrollEnabled={settings.autoScrollEnabled}
         onAutoScrollEnabledChange={settings.changeAutoScrollEnabled}
         lightThemeEnabled={settings.lightThemeEnabled}
@@ -183,6 +187,8 @@ function App() {
           onPreviewPoint={sourcePreviewSync.revealPreviewSource}
           onCursorChange={updateFooterCursorPosition}
           showPreviewPosition={settings.showPreviewPosition}
+          previewClickNavigationEnabled={settings.previewClickNavigationEnabled}
+          canvasPreviewEnabled={settings.canvasPreviewEnabled}
           autoScrollEnabled={settings.autoScrollEnabled}
           lightThemeEnabled={settings.lightThemeEnabled}
           foldingEnabled={settings.foldingEnabled}

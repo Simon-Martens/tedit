@@ -23,6 +23,8 @@ const RAPID_UPDATE_WINDOW_MS = 700
 const MAX_WORKER_RECOVERY_ATTEMPTS = 3
 const VIEWPORT_SETTLE_MS = 240
 const VIEWPORT_OVERSCAN = 2
+const INITIAL_RENDER_PAGE_COUNT = VIEWPORT_OVERSCAN + 1
+const MIN_CANVAS_PIXEL_RATIO = 2
 const PAINT_OVERSCAN = 0.1
 const AUTO_SCROLL_GUARD_FRACTION = 0.15
 const BLOCK_MARKER_HORIZONTAL_PADDING_PX = 14
@@ -43,7 +45,7 @@ interface RenderMetrics {
 }
 
 interface PreviewPageLayout {
-  element: SVGGElement
+  element: Element
   intrinsicY: number
   x: number
   y: number
@@ -118,9 +120,25 @@ type RendererWorkerMessage = {
   type: 'ready'
 } | {
   type: 'result'
+  mode: 'svg'
   requestId: number
   reset: boolean
   patch: string
+  pages: RenderPageInfo[]
+  docWidth: number
+  docHeight: number
+  renderDurationMs: number
+} | {
+  type: 'result'
+  mode: 'canvas'
+  requestId: number
+  reset: boolean
+  images: Array<{
+    pageIndex: number
+    pixelWidth: number
+    pixelHeight: number
+    bitmap: ImageBitmap
+  }>
   pages: RenderPageInfo[]
   docWidth: number
   docHeight: number
@@ -260,6 +278,8 @@ function TypstPreviewContent({
   positions,
   status,
   showPreviewPosition,
+  previewClickNavigationEnabled,
+  canvasPreviewEnabled,
   autoScrollEnabled,
   renderBackoffMs,
   onPreviewPoint,
@@ -271,6 +291,8 @@ function TypstPreviewContent({
   positions: PreviewPosition[]
   status: SourceSyncStatus
   showPreviewPosition: boolean
+  previewClickNavigationEnabled: boolean
+  canvasPreviewEnabled: boolean
   autoScrollEnabled: boolean
   renderBackoffMs: number
   onPreviewPoint(position: PreviewPosition): void
@@ -288,6 +310,8 @@ function TypstPreviewContent({
   const [printError, setPrintError] = useState<string>()
   const [printing, setPrinting] = useState(false)
   const zoomRef = useRef<PdfZoom>(zoom)
+  const canvasPreviewEnabledRef = useRef(canvasPreviewEnabled)
+  const workerModeRef = useRef<'svg' | 'canvas'>(canvasPreviewEnabled ? 'canvas' : 'svg')
   const viewportRef = useRef<HTMLDivElement>(null)
   const documentRef = useRef<HTMLDivElement>(null)
   const markerRef = useRef<HTMLDivElement>(null)
@@ -317,47 +341,143 @@ function TypstPreviewContent({
   const pageLayoutsRef = useRef<PreviewPageLayout[]>([])
   const pageBackgroundsRef = useRef<SVGRectElement[]>([])
   const paintedPageRangeRef = useRef<{ first: number; last: number } | undefined>(undefined)
-  const semanticElementsRef = useRef(new WeakMap<SVGGElement, Element[]>())
+  const semanticElementsRef = useRef(new WeakMap<Element, Element[]>())
   const previewSelectionActiveRef = useRef(false)
+  const autoScrollPendingRef = useRef(true)
+  const autoScrollPositionsRef = useRef(positions)
+  const autoScrollZoomRef = useRef<PdfZoom>(zoom)
+  const autoScrollEnabledRef = useRef(autoScrollEnabled)
   const partialRenderingDisabledRef = useRef(partialRenderingDisabled)
   const statusError = status.documentId === document.id && status.state === 'error' ? status.message : undefined
   const effectivePreviewError = previewError ?? statusError
   const visiblePreviewError = printError ?? statusError
   zoomRef.current = zoom
+  canvasPreviewEnabledRef.current = canvasPreviewEnabled
   partialRenderingDisabledRef.current = partialRenderingDisabled
   if (renderBackoffBaseRef.current !== normalizedRenderBackoffMs) {
     renderBackoffBaseRef.current = normalizedRenderBackoffMs
     renderBackoffRef.current = normalizedRenderBackoffMs
   }
 
-  const applyScaleToSvg = (svg: SVGSVGElement, metrics: RenderMetrics) => {
+  const displayPixelsPerPoint = (metrics: RenderMetrics) => {
     const viewport = viewportRef.current
-    if (!viewport || !metrics.pages.length) return
+    if (!viewport || !metrics.pages.length) return CSS_PIXELS_PER_POINT
     const firstPage = metrics.pages[0]
     const availableWidth = Math.max(100, viewport.clientWidth - 20)
     const availableHeight = Math.max(100, viewport.clientHeight - 20)
-    const documentWidth = Number(svg.dataset.width) || metrics.docWidth
-    const documentHeight = Number(svg.dataset.height) || metrics.docHeight
-    const baseWidth = documentWidth * CSS_PIXELS_PER_POINT
-    const baseHeight = documentHeight * CSS_PIXELS_PER_POINT
-    let scale = availableWidth / baseWidth
+    const documentWidth = Math.max(...metrics.pages.map((page) => page.width))
+    let pixelsPerPoint = availableWidth / documentWidth
     const currentZoom = zoomRef.current
     if (currentZoom === 'page' && firstPage) {
-      scale = Math.min(
-        availableWidth / (firstPage.width * CSS_PIXELS_PER_POINT),
-        availableHeight / (firstPage.height * CSS_PIXELS_PER_POINT),
+      pixelsPerPoint = Math.min(
+        availableWidth / firstPage.width,
+        availableHeight / firstPage.height,
       )
     } else if (typeof currentZoom === 'number') {
-      scale = currentZoom / 100
+      pixelsPerPoint = CSS_PIXELS_PER_POINT * (currentZoom / 100)
     }
-    svg.style.width = `${Math.max(1, baseWidth * scale)}px`
-    svg.style.height = `${Math.max(1, baseHeight * scale)}px`
+    return pixelsPerPoint
+  }
+
+  const applyScaleToSvg = (svg: SVGSVGElement, metrics: RenderMetrics) => {
+    const pixelsPerPoint = displayPixelsPerPoint(metrics)
+    const documentWidth = Number(svg.dataset.width) || metrics.docWidth
+    const documentHeight = Number(svg.dataset.height) || metrics.docHeight
+    svg.style.width = `${Math.max(1, documentWidth * pixelsPerPoint)}px`
+    svg.style.height = `${Math.max(1, documentHeight * pixelsPerPoint)}px`
+  }
+
+  const layoutCanvasPages = (container: HTMLDivElement, metrics: RenderMetrics) => {
+    const width = Math.max(...metrics.pages.map((page) => page.width), 1)
+    let y = 0
+    let intrinsicY = 0
+    const signature = metrics.pages.map(({ width: pageWidth, height }) => `${pageWidth}:${height}`).join(';')
+    let root = container.querySelector<HTMLElement>(':scope > .typst-canvas-document')
+    if (!root || root.dataset.layoutSignature !== signature) {
+      root = window.document.createElement('div')
+      root.className = 'typst-canvas-document'
+      root.dataset.layoutSignature = signature
+      for (let index = 0; index < metrics.pages.length; index += 1) {
+        const page = window.document.createElement('div')
+        page.className = 'typst-canvas-page'
+        page.dataset.pageNumber = String(index)
+        root.append(page)
+      }
+      container.replaceChildren(root)
+    }
+    const pixelsPerPoint = displayPixelsPerPoint(metrics)
+    const layouts = metrics.pages.map((page, index) => {
+      if (index > 0) y += PAGE_GAP_POINTS
+      const x = (width - page.width) / 2
+      const layout = {
+        element: root.children[index],
+        intrinsicY,
+        x,
+        y,
+        width: page.width,
+        height: page.height,
+      }
+      const element = layout.element as HTMLElement
+      element.style.left = `${x * pixelsPerPoint}px`
+      element.style.top = `${y * pixelsPerPoint}px`
+      element.style.width = `${page.width * pixelsPerPoint}px`
+      element.style.height = `${page.height * pixelsPerPoint}px`
+      y += page.height
+      intrinsicY += page.height
+      return layout
+    })
+    root.dataset.width = String(width)
+    root.dataset.height = String(y)
+    root.style.width = `${width * pixelsPerPoint}px`
+    root.style.height = `${y * pixelsPerPoint}px`
+    return layouts
+  }
+
+  const applyCanvasImages = (
+    layouts: PreviewPageLayout[],
+    images: Extract<RendererWorkerMessage, { mode: 'canvas' }>['images'],
+  ) => {
+    const renderedPages = new Set(images.map(({ pageIndex }) => pageIndex))
+    for (const [index, page] of layouts.entries()) {
+      if (renderedPages.has(index)) continue
+      const canvas = page.element.querySelector<HTMLCanvasElement>(':scope > canvas')
+      if (canvas) {
+        canvas.width = 0
+        canvas.height = 0
+        canvas.remove()
+      }
+    }
+    for (const image of images) {
+      const page = layouts[image.pageIndex]?.element
+      if (!(page instanceof HTMLElement)) {
+        image.bitmap.close()
+        continue
+      }
+      let canvas = page.querySelector<HTMLCanvasElement>(':scope > canvas')
+      if (!canvas) {
+        canvas = window.document.createElement('canvas')
+        canvas.className = 'typst-canvas-page-image'
+        page.append(canvas)
+      }
+      canvas.width = image.pixelWidth
+      canvas.height = image.pixelHeight
+      const bitmapContext = canvas.getContext('bitmaprenderer')
+      if (bitmapContext) bitmapContext.transferFromImageBitmap(image.bitmap)
+      else {
+        const context = canvas.getContext('2d')
+        if (context) context.drawImage(image.bitmap, 0, 0)
+        image.bitmap.close()
+      }
+    }
   }
 
   const applyScale = () => {
     const metrics = renderMetricsRef.current
-    const svg = documentRef.current?.firstElementChild as SVGSVGElement | null
-    if (metrics && svg) applyScaleToSvg(svg, metrics)
+    const container = documentRef.current
+    const root = container?.firstElementChild
+    if (!metrics || !container || !root) return
+    if (root instanceof SVGSVGElement) applyScaleToSvg(root, metrics)
+    else layoutCanvasPages(container, metrics)
   }
 
   const getRenderWindow = () => {
@@ -401,6 +521,49 @@ function TypstPreviewContent({
     }
   }
 
+  const getCanvasRenderTarget = () => {
+    const metrics = renderMetricsRef.current
+    const viewport = viewportRef.current
+    const root = documentRef.current?.firstElementChild as HTMLElement | null
+    const pages = pageLayoutsRef.current
+    const pixelPerPt = (metrics ? displayPixelsPerPoint(metrics) : CSS_PIXELS_PER_POINT)
+      * Math.max(MIN_CANVAS_PIXEL_RATIO, Math.min(window.devicePixelRatio || 1, 3))
+    if (!viewport || !root || !pages.length || !appliedRequestIdRef.current) {
+      const pageIndices = Array.from({ length: INITIAL_RENDER_PAGE_COUNT }, (_, index) => index)
+      return { pageIndices, pixelPerPt, key: `canvas:initial:${pixelPerPt.toFixed(3)}` }
+    }
+    const rootRect = root.getBoundingClientRect()
+    const viewportRect = viewport.getBoundingClientRect()
+    const documentHeight = Number(root.dataset.height)
+    const scale = documentHeight > 0 ? rootRect.height / documentHeight : 0
+    if (!scale) return { pageIndices: [0], pixelPerPt, key: `canvas:0:0:${pixelPerPt.toFixed(3)}` }
+    const viewportHeight = viewportRect.height / scale
+    const visibleTop = (viewportRect.top - rootRect.top) / scale
+    const first = Math.max(0, findFirstPageEndingAfter(pages, visibleTop - viewportHeight))
+    const last = Math.min(
+      pages.length - 1,
+      findLastPageStartingBefore(pages, visibleTop + viewportHeight * 2),
+    )
+    if (first >= pages.length || last < first) {
+      const nearest = Math.max(0, Math.min(
+        pages.length - 1,
+        findLastPageStartingBefore(pages, visibleTop),
+      ))
+      return {
+        pageIndices: [nearest],
+        pixelPerPt,
+        key: `canvas:${nearest}:${nearest}:${pixelPerPt.toFixed(3)}`,
+      }
+    }
+    const pageIndices = Array.from({ length: Math.max(0, last - first + 1) }, (_, index) => first + index)
+    return { pageIndices, pixelPerPt, key: `canvas:${first}:${last}:${pixelPerPt.toFixed(3)}` }
+  }
+
+  const getRenderTarget = () => {
+    if (canvasPreviewEnabledRef.current) return { mode: 'canvas' as const, ...getCanvasRenderTarget() }
+    return { mode: 'svg' as const, ...getRenderWindow() }
+  }
+
   const hasPreviewSelection = () => {
     const selection = window.getSelection()
     const preview = documentRef.current
@@ -414,12 +577,12 @@ function TypstPreviewContent({
 
   const updatePageVisibility = (force = false, preserveAllPages = hasPreviewSelection()) => {
     const viewport = viewportRef.current
-    const svg = documentRef.current?.firstElementChild as SVGSVGElement | null
+    const root = documentRef.current?.firstElementChild as SVGSVGElement | HTMLElement | null
     const pages = pageLayoutsRef.current
-    if (!viewport || !svg || !pages.length) return
-    const svgRect = svg.getBoundingClientRect()
+    if (!viewport || !root || !pages.length) return
+    const svgRect = root.getBoundingClientRect()
     const viewportRect = viewport.getBoundingClientRect()
-    const documentHeight = Number(svg.dataset.height)
+    const documentHeight = Number((root as HTMLElement | SVGSVGElement).dataset.height)
     const scale = documentHeight > 0 ? svgRect.height / documentHeight : 0
     if (!scale) return
     let first = 0
@@ -438,22 +601,24 @@ function TypstPreviewContent({
       }
     }
     const current = paintedPageRangeRef.current
-    if (force || !current) {
-      for (const [index, page] of pages.entries()) {
-        const hidden = index < first || index > last
-        page.element.classList.toggle('tedit-page-hidden', hidden)
-        pageBackgroundsRef.current[index]?.classList.toggle('tedit-page-hidden', hidden)
-      }
-    } else if (current.first !== first || current.last !== last) {
-      for (let index = current.first; index <= current.last; index += 1) {
-        if (index >= first && index <= last) continue
-        pages[index]?.element.classList.add('tedit-page-hidden')
-        pageBackgroundsRef.current[index]?.classList.add('tedit-page-hidden')
-      }
-      for (let index = first; index <= last; index += 1) {
-        if (index >= current.first && index <= current.last) continue
-        pages[index]?.element.classList.remove('tedit-page-hidden')
-        pageBackgroundsRef.current[index]?.classList.remove('tedit-page-hidden')
+    if (root instanceof SVGSVGElement) {
+      if (force || !current) {
+        for (const [index, page] of pages.entries()) {
+          const hidden = index < first || index > last
+          page.element.classList.toggle('tedit-page-hidden', hidden)
+          pageBackgroundsRef.current[index]?.classList.toggle('tedit-page-hidden', hidden)
+        }
+      } else if (current.first !== first || current.last !== last) {
+        for (let index = current.first; index <= current.last; index += 1) {
+          if (index >= first && index <= last) continue
+          pages[index]?.element.classList.add('tedit-page-hidden')
+          pageBackgroundsRef.current[index]?.classList.add('tedit-page-hidden')
+        }
+        for (let index = first; index <= last; index += 1) {
+          if (index >= current.first && index <= current.last) continue
+          pages[index]?.element.classList.remove('tedit-page-hidden')
+          pageBackgroundsRef.current[index]?.classList.remove('tedit-page-hidden')
+        }
       }
     }
     paintedPageRangeRef.current = { first, last }
@@ -466,20 +631,25 @@ function TypstPreviewContent({
       viewportRenderPendingRef.current = true
       return
     }
-    const renderWindow = getRenderWindow()
-    if (renderWindow.key === lastRenderedWindowKeyRef.current) {
+    const renderTarget = getRenderTarget()
+    if (renderTarget.key === lastRenderedWindowKeyRef.current) {
       viewportRenderPendingRef.current = false
       return
     }
     viewportRenderPendingRef.current = false
     processingRef.current = true
     activeRenderKindRef.current = 'viewport'
-    activeRenderWindowKeyRef.current = renderWindow.key
+    activeRenderWindowKeyRef.current = renderTarget.key
     workerRef.current.postMessage({
       type: 'render',
+      mode: renderTarget.mode,
       requestId: ++renderRequestIdRef.current,
       updates: [],
-      window: renderWindow.bounds,
+      window: renderTarget.mode === 'svg'
+        ? renderTarget.bounds
+        : { lo: { x: 0, y: 0 }, hi: { x: 1e20, y: 1e20 } },
+      pageIndices: renderTarget.mode === 'canvas' ? renderTarget.pageIndices : undefined,
+      pixelPerPt: renderTarget.mode === 'canvas' ? renderTarget.pixelPerPt : undefined,
     })
   }
 
@@ -550,13 +720,23 @@ function TypstPreviewContent({
         }
         const applicableUpdates = latestNew >= 0 ? updates.slice(latestNew) : updates
         const requestId = ++renderRequestIdRef.current
-        const renderWindow = getRenderWindow()
-        activeRenderWindowKeyRef.current = renderWindow.key
+        const renderTarget = getRenderTarget()
+        activeRenderWindowKeyRef.current = renderTarget.key
         workerRef.current?.postMessage({
           type: 'render',
+          mode: renderTarget.mode,
           requestId,
           updates: applicableUpdates,
-          window: renderWindow.bounds,
+          window: renderTarget.mode === 'svg'
+            ? renderTarget.bounds
+            : { lo: { x: 0, y: 0 }, hi: { x: 1e20, y: 1e20 } },
+          pageIndices: renderTarget.mode === 'canvas' ? renderTarget.pageIndices : undefined,
+          pixelPerPt: renderTarget.mode === 'canvas' ? renderTarget.pixelPerPt : undefined,
+          initialPageCount: renderTarget.mode === 'svg'
+            && !appliedRequestIdRef.current
+            && !partialRenderingDisabledRef.current
+            ? INITIAL_RENDER_PAGE_COUNT
+            : undefined,
         }, applicableUpdates.map((update) => update.data.buffer as ArrayBuffer))
       }
       if (!delay) renderUpdates()
@@ -572,11 +752,33 @@ function TypstPreviewContent({
       setPreviewError('The live preview requires the tedit desktop app.')
       return
     }
+    const renderMode = canvasPreviewEnabled ? 'canvas' : 'svg'
+    const modeChanged = workerModeRef.current !== renderMode
+    workerModeRef.current = renderMode
+    if (modeChanged) {
+      renderRequestIdRef.current += 1
+      appliedRequestIdRef.current = 0
+      renderMetricsRef.current = undefined
+      pageLayoutsRef.current = []
+      pageBackgroundsRef.current = []
+      paintedPageRangeRef.current = undefined
+      semanticElementsRef.current = new WeakMap()
+      lastRenderedWindowKeyRef.current = undefined
+      documentRef.current?.replaceChildren()
+      setPageCount(0)
+      setPreviewError(undefined)
+      awaitingFreshSnapshotRef.current = true
+    }
     const worker = new Worker(new URL('../workers/typstRenderer.worker.ts', import.meta.url), { type: 'module' })
     workerRef.current = worker
     worker.onmessage = (event: MessageEvent<RendererWorkerMessage>) => {
-      if (workerRef.current !== worker) return
       const message = event.data
+      if (workerRef.current !== worker) {
+        if (message.type === 'result' && message.mode === 'canvas') {
+          for (const image of message.images) image.bitmap.close()
+        }
+        return
+      }
       if (message.type === 'ready') {
         workerReadyRef.current = true
         processUpdates(
@@ -596,6 +798,7 @@ function TypstPreviewContent({
         return
       }
       if (message.requestId < appliedRequestIdRef.current) {
+        if (message.mode === 'canvas') for (const image of message.images) image.bitmap.close()
         processingRef.current = false
         activeRenderKindRef.current = undefined
         activeRenderWindowKeyRef.current = undefined
@@ -604,24 +807,32 @@ function TypstPreviewContent({
       try {
         const patchStartedAt = performance.now()
         const container = documentRef.current
-        if (!container) return
-        const parsed = window.document.createElement('div')
-        parsed.innerHTML = message.patch
-        const nextSvg = parsed.firstElementChild as SVGSVGElement | null
-        const currentSvg = container.firstElementChild as SVGSVGElement | null
-        if (!nextSvg) throw new Error('Tinymist produced an empty SVG preview.')
+        if (!container) {
+          if (message.mode === 'canvas') for (const image of message.images) image.bitmap.close()
+          return
+        }
         const metrics = { pages: message.pages, docWidth: message.docWidth, docHeight: message.docHeight }
         renderMetricsRef.current = metrics
         let pageLayouts: PreviewPageLayout[]
-        if (message.reset || !currentSvg) {
-          pageLayouts = decoratePages(nextSvg)
-          applyScaleToSvg(nextSvg, metrics)
-          container.replaceChildren(nextSvg)
+        if (message.mode === 'canvas') {
+          pageLayouts = layoutCanvasPages(container, metrics)
+          applyCanvasImages(pageLayouts, message.images)
         } else {
-          decoratePages(nextSvg, false)
-          applyScaleToSvg(nextSvg, metrics)
-          patchRoot(currentSvg, nextSvg)
-          pageLayouts = decoratePages(currentSvg)
+          const parsed = window.document.createElement('div')
+          parsed.innerHTML = message.patch
+          const nextSvg = parsed.firstElementChild as SVGSVGElement | null
+          const currentSvg = container.firstElementChild as SVGSVGElement | null
+          if (!nextSvg) throw new Error('Tinymist produced an empty SVG preview.')
+          if (message.reset || !currentSvg) {
+            pageLayouts = decoratePages(nextSvg)
+            applyScaleToSvg(nextSvg, metrics)
+            container.replaceChildren(nextSvg)
+          } else {
+            decoratePages(nextSvg, false)
+            applyScaleToSvg(nextSvg, metrics)
+            patchRoot(currentSvg, nextSvg)
+            pageLayouts = decoratePages(currentSvg)
+          }
         }
         pageLayoutsRef.current = pageLayouts
         semanticElementsRef.current = new WeakMap()
@@ -655,7 +866,9 @@ function TypstPreviewContent({
           console.debug('Typst preview update', {
             renderMs: Math.round(message.renderDurationMs),
             patchMs: Math.round(patchDurationMs),
-            patchBytes: message.patch.length,
+            ...(message.mode === 'svg'
+              ? { patchBytes: message.patch.length }
+              : { canvasPages: message.images.length }),
           })
         }
       } catch (error) {
@@ -690,7 +903,8 @@ function TypstPreviewContent({
         && !awaitingFreshSnapshotRef.current
       processUpdates(initialSnapshot ? 0 : delay)
     })
-    if (refreshOnWorkerStartRef.current) {
+    if (modeChanged) desktop.refreshSourceSync({ documentId: document.id })
+    else if (refreshOnWorkerStartRef.current) {
       refreshOnWorkerStartRef.current = false
       desktop.refreshSourceSync({ documentId: document.id })
     }
@@ -723,7 +937,7 @@ function TypstPreviewContent({
       window.clearTimeout(workerRecoveryTimerRef.current)
       workerRecoveryTimerRef.current = undefined
     }
-  }, [document.id, workerGeneration])
+  }, [document.id, workerGeneration, canvasPreviewEnabled])
 
   useEffect(() => {
     applyScale()
@@ -766,16 +980,16 @@ function TypstPreviewContent({
 
   const pageLayouts = () => pageLayoutsRef.current
   const previewPoint = (position: PreviewPosition) => {
-    const svg = documentRef.current?.firstElementChild as SVGSVGElement | null
+    const root = documentRef.current?.firstElementChild as SVGSVGElement | HTMLElement | null
     const page = pageLayoutsRef.current[position.page - 1]
-    if (!svg || !page) return
-    const svgRect = svg.getBoundingClientRect()
-    const documentWidth = Number(svg.dataset.width)
-    const documentHeight = Number(svg.dataset.height)
-    if (!documentWidth || !documentHeight || !svgRect.width || !svgRect.height) return
+    if (!root || !page) return
+    const rootRect = root.getBoundingClientRect()
+    const documentWidth = Number(root.dataset.width)
+    const documentHeight = Number(root.dataset.height)
+    if (!documentWidth || !documentHeight || !rootRect.width || !rootRect.height) return
     return {
-      x: svgRect.left + (page.x + position.x) * (svgRect.width / documentWidth),
-      y: svgRect.top + (page.y + position.y) * (svgRect.height / documentHeight),
+      x: rootRect.left + (page.x + position.x) * (rootRect.width / documentWidth),
+      y: rootRect.top + (page.y + position.y) * (rootRect.height / documentHeight),
     }
   }
 
@@ -813,25 +1027,58 @@ function TypstPreviewContent({
     const position = positions.reduce((closest, candidate) => (
       Math.abs(candidate.page - pageNumber) <= Math.abs(closest.page - pageNumber) ? candidate : closest
     ))
-    const block = previewBlockRect(position)
     const markerParent = marker.offsetParent as HTMLElement | null
-    if (!block || !markerParent) {
+    if (!markerParent) {
       marker.classList.remove('visible')
       return
     }
     const parentRect = markerParent.getBoundingClientRect()
+    if (canvasPreviewEnabled) {
+      const point = previewPoint(position)
+      const page = pages[position.page - 1]
+      if (!point || !page) {
+        marker.classList.remove('visible')
+        return
+      }
+      const pageRect = page.element.getBoundingClientRect()
+      const lineHeight = Math.max(12, Math.min(22, pageRect.height / 45))
+      marker.classList.add('canvas-line')
+      marker.style.left = `${pageRect.left - parentRect.left}px`
+      marker.style.top = `${point.y - parentRect.top - lineHeight}px`
+      marker.style.width = `${pageRect.width}px`
+      marker.style.height = `${lineHeight}px`
+      marker.classList.toggle('visible', showPreviewPosition)
+      return
+    }
+    marker.classList.remove('canvas-line')
+    const block = previewBlockRect(position)
+    if (!block) {
+      marker.classList.remove('visible')
+      return
+    }
     marker.style.left = `${block.left - parentRect.left - BLOCK_MARKER_HORIZONTAL_PADDING_PX}px`
     marker.style.top = `${block.top - parentRect.top - BLOCK_MARKER_VERTICAL_PADDING_PX}px`
     marker.style.width = `${block.right - block.left + BLOCK_MARKER_HORIZONTAL_PADDING_PX * 2}px`
     marker.style.height = `${block.bottom - block.top + BLOCK_MARKER_VERTICAL_PADDING_PX * 2}px`
     marker.classList.toggle('visible', showPreviewPosition)
-  }, [positions, renderedVersion, pageNumber, zoom, showPreviewPosition])
+  }, [positions, renderedVersion, pageNumber, zoom, showPreviewPosition, canvasPreviewEnabled])
 
   useEffect(() => {
+    if (autoScrollPositionsRef.current !== positions) {
+      autoScrollPositionsRef.current = positions
+      autoScrollPendingRef.current = true
+    }
+    if (autoScrollZoomRef.current !== zoom) {
+      autoScrollZoomRef.current = zoom
+      autoScrollPendingRef.current = true
+    }
+    if (!autoScrollEnabledRef.current && autoScrollEnabled) autoScrollPendingRef.current = true
+    autoScrollEnabledRef.current = autoScrollEnabled
     const viewport = viewportRef.current
     const pages = pageLayouts()
     if (
       !autoScrollEnabled
+      || !autoScrollPendingRef.current
       || !viewport
       || !positions.length
       || !pages.length
@@ -841,6 +1088,7 @@ function TypstPreviewContent({
     ))
     const point = previewPoint(position)
     if (!point) return
+    autoScrollPendingRef.current = false
     const viewportRect = viewport.getBoundingClientRect()
     const targetY = point.y
     const guardTop = viewportRect.top + viewportRect.height * AUTO_SCROLL_GUARD_FRACTION
@@ -856,6 +1104,7 @@ function TypstPreviewContent({
   }, [positions, renderedVersion, zoom, autoScrollEnabled])
 
   const trackVisiblePage = () => {
+    autoScrollPendingRef.current = false
     if (scrollFrameRef.current !== undefined) return
     scrollFrameRef.current = requestAnimationFrame(() => {
       scrollFrameRef.current = undefined
@@ -876,12 +1125,12 @@ function TypstPreviewContent({
   const revealSource = (event: MouseEvent<HTMLDivElement>) => {
     const target = event.target as Element
     const pages = pageLayouts()
-    const svg = documentRef.current?.firstElementChild as SVGSVGElement | null
-    if (!svg || !pages.length) return
-    const clickedPage = target.closest<SVGGElement>('g.typst-page')
+    const root = documentRef.current?.firstElementChild as SVGSVGElement | HTMLElement | null
+    if (!root || !pages.length) return
+    const clickedPage = target.closest('[data-page-number]')
     let pageIndex = clickedPage ? pages.findIndex((page) => page.element === clickedPage) : -1
-    const svgRect = svg.getBoundingClientRect()
-    const documentHeight = Number(svg.dataset.height)
+    const svgRect = root.getBoundingClientRect()
+    const documentHeight = Number(root.dataset.height)
     const scale = documentHeight > 0 ? svgRect.height / documentHeight : 0
     if (!scale) return
     if (pageIndex < 0) {
@@ -980,8 +1229,14 @@ function TypstPreviewContent({
         {pageCount > 0 && visiblePreviewError && (
           <div className="preview-error" role="alert">{visiblePreviewError}</div>
         )}
-        <div className="typst-preview-content" onClick={revealSource}>
-          <div className="typst-preview-document" ref={documentRef} />
+        <div
+          className="typst-preview-content"
+          onClick={previewClickNavigationEnabled ? revealSource : undefined}
+        >
+          <div
+            className={`typst-preview-document${canvasPreviewEnabled ? ' canvas-preview' : ''}`}
+            ref={documentRef}
+          />
           <div className="typst-block-marker" ref={markerRef} aria-hidden="true" />
         </div>
         {!pageCount && (
@@ -1006,6 +1261,8 @@ const MemoizedTypstPreview = memo(TypstPreviewContent, (previous, next) => (
   && previous.positions === next.positions
   && previous.status === next.status
   && previous.showPreviewPosition === next.showPreviewPosition
+  && previous.previewClickNavigationEnabled === next.previewClickNavigationEnabled
+  && previous.canvasPreviewEnabled === next.canvasPreviewEnabled
   && previous.autoScrollEnabled === next.autoScrollEnabled
   && previous.renderBackoffMs === next.renderBackoffMs
   && previous.onPreviewRootChange === next.onPreviewRootChange

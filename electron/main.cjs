@@ -20,6 +20,7 @@ const { createTinymistIpcController } = require('./tinymist-ipc-controller.cjs')
 const { createWindowLifecycle } = require('./window-lifecycle.cjs')
 
 app.setPath('userData', path.join(app.getPath('appData'), 'tedit'))
+if (process.env.TEDIT_DISABLE_HARDWARE_ACCELERATION === '1') app.disableHardwareAcceleration()
 
 const isDevelopment = Boolean(process.env.VITE_DEV_SERVER_URL)
 const appEntryUrl = isDevelopment

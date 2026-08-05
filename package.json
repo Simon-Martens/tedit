@@ -8,6 +8,7 @@
   "desktopName": "tedit.desktop",
   "scripts": {
     "dev": "concurrently --kill-others \"npm:dev:renderer\" \"npm:dev:electron\"",
+    "dev:software-rendering": "cross-env TEDIT_DISABLE_HARDWARE_ACCELERATION=1 npm run dev",
     "dev:renderer": "vite",
     "dev:electron": "wait-on http://localhost:5173 && cross-env VITE_DEV_SERVER_URL=http://localhost:5173 electron .",
     "build": "tsc -b && vite build",

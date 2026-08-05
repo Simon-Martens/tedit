@@ -31,6 +31,8 @@ export function Workspace({
   onPreviewPoint,
   onCursorChange,
   showPreviewPosition,
+  previewClickNavigationEnabled,
+  canvasPreviewEnabled,
   autoScrollEnabled,
   lightThemeEnabled,
   foldingEnabled,
@@ -58,6 +60,8 @@ export function Workspace({
   onPreviewPoint(position: PreviewPosition): void
   onCursorChange(line: number, column: number): void
   showPreviewPosition: boolean
+  previewClickNavigationEnabled: boolean
+  canvasPreviewEnabled: boolean
   autoScrollEnabled: boolean
   lightThemeEnabled: boolean
   foldingEnabled: boolean
@@ -226,7 +230,9 @@ export function Workspace({
           onPreviewRootChange={stablePreviewRootChangeRef.current}
           positions={previewPositions}
           status={previewStatus}
-          showPreviewPosition={showPreviewPosition}
+          showPreviewPosition={!canvasPreviewEnabled && showPreviewPosition}
+          previewClickNavigationEnabled={!canvasPreviewEnabled && previewClickNavigationEnabled}
+          canvasPreviewEnabled={canvasPreviewEnabled}
           autoScrollEnabled={autoScrollEnabled}
           renderBackoffMs={previewRenderBackoffMs}
           onPreviewPoint={stablePreviewPointRef.current}

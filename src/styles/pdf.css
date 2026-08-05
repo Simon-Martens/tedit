@@ -208,6 +208,30 @@
   transform-origin: top center;
 }
 
+.typst-preview-document.canvas-preview {
+  padding-top: 4px;
+}
+
+.typst-canvas-document {
+  position: relative;
+  margin: 0 auto;
+}
+
+.typst-canvas-page {
+  position: absolute;
+  overflow: hidden;
+  box-sizing: border-box;
+  border: 1px solid rgb(0 0 0 / 18%);
+  background: white;
+}
+
+.typst-canvas-page-image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  image-rendering: auto;
+}
+
 .typst-preview-document .tedit-page-background {
   pointer-events: none;
   fill: white;
@@ -416,6 +440,15 @@
 
 .typst-block-marker.visible {
   opacity: 1;
+}
+
+.typst-block-marker.canvas-line {
+  border-block: 1px solid rgb(185 139 212 / 34%);
+  background: rgb(185 139 212 / 14%);
+}
+
+.typst-block-marker.canvas-line::before {
+  display: none;
 }
 
 .pdf-print-frame {

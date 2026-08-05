@@ -129,6 +129,8 @@ export interface PreviewRootDiscoveryResult {
 export interface AppSettings {
   vimEnabled: boolean
   showPreviewPosition: boolean
+  previewClickNavigationEnabled: boolean
+  canvasPreviewEnabled: boolean
   autoScrollEnabled: boolean
   lightThemeEnabled: boolean
   foldingEnabled: boolean

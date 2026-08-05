@@ -16,6 +16,10 @@ interface ToolbarProps {
   onVimEnabledChange(enabled: boolean): void
   showPreviewPosition: boolean
   onShowPreviewPositionChange(enabled: boolean): void
+  previewClickNavigationEnabled: boolean
+  onPreviewClickNavigationEnabledChange(enabled: boolean): void
+  canvasPreviewEnabled: boolean
+  onCanvasPreviewEnabledChange(enabled: boolean): void
   autoScrollEnabled: boolean
   onAutoScrollEnabledChange(enabled: boolean): void
   lightThemeEnabled: boolean
@@ -54,6 +58,10 @@ function ToolbarContent({
   onVimEnabledChange,
   showPreviewPosition,
   onShowPreviewPositionChange,
+  previewClickNavigationEnabled,
+  onPreviewClickNavigationEnabledChange,
+  canvasPreviewEnabled,
+  onCanvasPreviewEnabledChange,
   autoScrollEnabled,
   onAutoScrollEnabledChange,
   lightThemeEnabled,
@@ -124,6 +132,10 @@ function ToolbarContent({
           onVimEnabledChange={onVimEnabledChange}
           showPreviewPosition={showPreviewPosition}
           onShowPreviewPositionChange={onShowPreviewPositionChange}
+          previewClickNavigationEnabled={previewClickNavigationEnabled}
+          onPreviewClickNavigationEnabledChange={onPreviewClickNavigationEnabledChange}
+          canvasPreviewEnabled={canvasPreviewEnabled}
+          onCanvasPreviewEnabledChange={onCanvasPreviewEnabledChange}
           autoScrollEnabled={autoScrollEnabled}
           onAutoScrollEnabledChange={onAutoScrollEnabledChange}
           lightThemeEnabled={lightThemeEnabled}
@@ -157,6 +169,8 @@ const MemoizedToolbar = memo(ToolbarContent, (previous, next) => (
   && previous.docsAvailable === next.docsAvailable
   && previous.vimEnabled === next.vimEnabled
   && previous.showPreviewPosition === next.showPreviewPosition
+  && previous.previewClickNavigationEnabled === next.previewClickNavigationEnabled
+  && previous.canvasPreviewEnabled === next.canvasPreviewEnabled
   && previous.autoScrollEnabled === next.autoScrollEnabled
   && previous.lightThemeEnabled === next.lightThemeEnabled
   && previous.foldingEnabled === next.foldingEnabled
@@ -173,6 +187,8 @@ export function Toolbar(props: ToolbarProps) {
   const onToggleDocs = useLatestCallback(props.onToggleDocs)
   const onVimEnabledChange = useLatestCallback(props.onVimEnabledChange)
   const onShowPreviewPositionChange = useLatestCallback(props.onShowPreviewPositionChange)
+  const onPreviewClickNavigationEnabledChange = useLatestCallback(props.onPreviewClickNavigationEnabledChange)
+  const onCanvasPreviewEnabledChange = useLatestCallback(props.onCanvasPreviewEnabledChange)
   const onAutoScrollEnabledChange = useLatestCallback(props.onAutoScrollEnabledChange)
   const onLightThemeEnabledChange = useLatestCallback(props.onLightThemeEnabledChange)
   const onFoldingEnabledChange = useLatestCallback(props.onFoldingEnabledChange)
@@ -189,6 +205,8 @@ export function Toolbar(props: ToolbarProps) {
     onToggleDocs={onToggleDocs}
     onVimEnabledChange={onVimEnabledChange}
     onShowPreviewPositionChange={onShowPreviewPositionChange}
+    onPreviewClickNavigationEnabledChange={onPreviewClickNavigationEnabledChange}
+    onCanvasPreviewEnabledChange={onCanvasPreviewEnabledChange}
     onAutoScrollEnabledChange={onAutoScrollEnabledChange}
     onLightThemeEnabledChange={onLightThemeEnabledChange}
     onFoldingEnabledChange={onFoldingEnabledChange}
