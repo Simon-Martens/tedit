@@ -133,6 +133,7 @@ export interface AppSettings {
   lightThemeEnabled: boolean
   foldingEnabled: boolean
   autocompleteEnabled: boolean
+  semanticHighlightingEnabled: boolean
   errorHighlightingEnabled: boolean
   automaticErrorPopupEnabled: boolean
   previewRenderBackoffMs: number
@@ -251,6 +252,12 @@ export interface DesktopApi {
     triggerCharacter?: string
     openDocuments: LanguageServerDocument[]
   }): Promise<LanguageServerCompletionResult>
+  semanticTokensWithLanguageServer(request: {
+    documentId: string
+    source: string
+    sourceVersion: number
+    openDocuments: LanguageServerDocument[]
+  }): Promise<{ data: number[]; resultId?: string } | null>
   compileWithLanguageServer(request: {
     documentId: string
     source: string

@@ -6,6 +6,13 @@ const { CancellationTokenSource, createMessageConnection } = require('vscode-jso
 const { resolveTinymistBinary } = require('./tinymist-binary.cjs')
 const { version: appVersion } = require('../package.json')
 
+const SEMANTIC_TOKEN_TYPES = [
+  'comment', 'string', 'keyword', 'operator', 'number', 'function', 'decorator', 'type', 'namespace',
+  'bool', 'punct', 'escape', 'link', 'raw', 'label', 'ref', 'heading', 'marker', 'term', 'delim',
+  'pol', 'error', 'text',
+]
+const SEMANTIC_TOKEN_MODIFIERS = ['strong', 'emph', 'math', 'readonly', 'static', 'defaultLibrary']
+
 function withTimeout(promise, milliseconds, message) {
   let timeout
   return Promise.race([
@@ -48,6 +55,8 @@ class TinymistLspService {
     this.exportCancellation = undefined
     this.completionGeneration = 0
     this.completionCancellation = undefined
+    this.semanticTokensGeneration = 0
+    this.semanticTokensCancellation = undefined
   }
 
   status(documentId, state, message) {
@@ -194,6 +203,16 @@ class TinymistLspService {
               completionList: {
                 itemDefaults: ['commitCharacters', 'editRange', 'insertTextFormat', 'insertTextMode', 'data'],
               },
+            },
+            semanticTokens: {
+              dynamicRegistration: false,
+              requests: { full: true },
+              tokenTypes: SEMANTIC_TOKEN_TYPES,
+              tokenModifiers: SEMANTIC_TOKEN_MODIFIERS,
+              formats: ['relative'],
+              overlappingTokenSupport: false,
+              multilineTokenSupport: false,
+              augmentsSyntaxTokens: true,
             },
             publishDiagnostics: { relatedInformation: true, versionSupport: true },
             synchronization: { didSave: true },
@@ -442,6 +461,41 @@ class TinymistLspService {
     }
   }
 
+  async semanticTokens({ documentId, source, sourceVersion, openDocuments = [] }) {
+    const semanticTokensGeneration = ++this.semanticTokensGeneration
+    this.semanticTokensCancellation?.cancel()
+    const activeDocumentOpen = openDocuments.some((document) => path.resolve(document.filePath) === this.activeFilePath)
+    const currentActiveDocument = this.openDocuments.get(this.activeUri)
+    const semanticDocuments = activeDocumentOpen ? openDocuments : [...openDocuments, {
+      documentId,
+      filePath: this.activeFilePath,
+      source,
+      version: currentActiveDocument?.version ?? sourceVersion,
+      sourceVersion,
+      clientVersion: currentActiveDocument?.clientVersion ?? sourceVersion,
+    }]
+    await this.syncDocuments({ documentId, openDocuments: semanticDocuments })
+    if (
+      semanticTokensGeneration !== this.semanticTokensGeneration
+      || documentId !== this.documentId
+      || !this.connection
+      || !this.open
+    ) return null
+    const cancellation = new CancellationTokenSource()
+    this.semanticTokensCancellation = cancellation
+    try {
+      return await this.connection.sendRequest('textDocument/semanticTokens/full', {
+        textDocument: { uri: this.activeUri },
+      }, cancellation.token)
+    } catch (error) {
+      if (semanticTokensGeneration !== this.semanticTokensGeneration || cancellation.token.isCancellationRequested) return null
+      throw error
+    } finally {
+      if (this.semanticTokensCancellation === cancellation) this.semanticTokensCancellation = undefined
+      cancellation.dispose()
+    }
+  }
+
   scheduleCompileDrain() {
     if (this.compileDrainPromise) return
     const drain = this.operationQueue.then(() => this.drainCompiles())
@@ -576,6 +630,9 @@ class TinymistLspService {
     this.completionGeneration += 1
     this.completionCancellation?.cancel()
     this.completionCancellation = undefined
+    this.semanticTokensGeneration += 1
+    this.semanticTokensCancellation?.cancel()
+    this.semanticTokensCancellation = undefined
     if (this.pendingCompile) {
       this.pendingCompile.resolve({ cancelled: true })
       this.pendingCompile = undefined

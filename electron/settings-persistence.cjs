@@ -9,6 +9,7 @@ const defaultSettings = {
   lightThemeEnabled: false,
   foldingEnabled: true,
   autocompleteEnabled: true,
+  semanticHighlightingEnabled: true,
   errorHighlightingEnabled: true,
   automaticErrorPopupEnabled: true,
   previewRenderBackoffMs: 180,

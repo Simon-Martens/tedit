@@ -14,6 +14,8 @@ export function SettingsMenu({
   onFoldingEnabledChange,
   autocompleteEnabled,
   onAutocompleteEnabledChange,
+  semanticHighlightingEnabled,
+  onSemanticHighlightingEnabledChange,
   errorHighlightingEnabled,
   onErrorHighlightingEnabledChange,
   automaticErrorPopupEnabled,
@@ -33,6 +35,8 @@ export function SettingsMenu({
   onFoldingEnabledChange(enabled: boolean): void
   autocompleteEnabled: boolean
   onAutocompleteEnabledChange(enabled: boolean): void
+  semanticHighlightingEnabled: boolean
+  onSemanticHighlightingEnabledChange(enabled: boolean): void
   errorHighlightingEnabled: boolean
   onErrorHighlightingEnabledChange(enabled: boolean): void
   automaticErrorPopupEnabled: boolean
@@ -135,6 +139,17 @@ export function SettingsMenu({
               type="checkbox"
               checked={autocompleteEnabled}
               onChange={(event) => onAutocompleteEnabledChange(event.target.checked)}
+            />
+          </label>
+          <label className="setting-row">
+            <span>
+              <strong>Semantic highlighting</strong>
+              <small>Use Tinymist for context-aware source colors</small>
+            </span>
+            <input
+              type="checkbox"
+              checked={semanticHighlightingEnabled}
+              onChange={(event) => onSemanticHighlightingEnabledChange(event.target.checked)}
             />
           </label>
           <label className="setting-row">

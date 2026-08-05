@@ -15,17 +15,17 @@ Der manuelle Zeilenumbruch ist selten nötig, vielleicht am ehesten beispielswei
 - Alle anderen Blöcke, die nicht Absätze sind, wie Überschriften, Listen, Blockzitate, Formeln etc. haben eigene Satzregeln und werden automatisch erkannt oder gekennzeichnet. \
     Das hier ist ein eingezogener Abschnitt. Er beginnt mit einem Tabulator.
 - In Listen funktioniert der Umbruch anders, und intuitiv, wie er soll. jede Zeile, die mit einem Minus ('-') beginnt, ist automatisch ein neuer Listenpunkt.
-    + Hier ein Unterpunkt,
+    + Hier ein Unterpunkt einer Unterliste,
     + aber einer geordneten Liste,
-    + deren Elemente mit einem Plus ('+') beginnen.
+    + deren Elemente mit einem Plus ('+') beginnen (oder halt mit 1., 2. 3. usw usf...)
 
 Wir kennen jetzt also zwei automatisch erkannte Blöcke: Absätze und Listen.
 
-= Andere Blöcke, $<-$ Überschrift erster Ebene ('=')
+= Andere Blöcke, $<-$ Überschrift erster Ebene (Prefix: '=')
 == die verwendet werden können $<-$ Überschrift zweiter Ebene ('==' usw.)
 
 / Term: Das hier ist die Definition eines Begriffs, auch dafür hat Typst eine Kurzform
-/ Benutzung:  Dazu schreibt man erst einen forward Slash ('/') an den Satzanfang, ein Spatium, den Term, der definiert werden soll und schließlich einen Doppelpunkt, gefolgt von der Definition. Verwendet wird das vor allem in der Mathematik oder Naturwissenschaft. 
+/ Benutzung:  Dazu schreibt man erst einen forward Slash ('/') an den Satzanfang, ein Spatium, den Term, der definiert werden soll und schließlich einen Doppelpunkt, gefolgt von der Definition. Verwendet wird das vor allem in den Sciences. 
 
 // Ein besonderer Block ist der Kommentar
 /* Dieser hier ist sogar mehrzeilig.
@@ -147,27 +147,30 @@ Dieser Teil:
 ```
 ist etwas komplexer. Im Grunde wird eine Schriftgröße festgesetzt und außerdem angegeben, was in jeder von zwei Spalten im Footer gezeigt wird. Ein bisschen schwieriger ist das `#context`_-Keyword_, über welches man alles #link("https://typst.app/docs/reference/context/")[$->$ hier] nachlesen kannn. Zusätzlich haben wir mit der `#text()`-Funktion die Sprache des Textes angegeben, und die Silbentrennung eingestellt (sehr wichtig!). Die letzte Funktion `#par()` ist das dritte Ding im Bunde neben Zeichen- und Seitenformatierung -- nämlich die Absatzformatierung. `leading` ist dabei der Zeilenabstand.
 
-== Auto-Ersetzungen und `#show`-Rules
+== Jetzt machen wir's uns bequem: Auto-Ersetzungen, `#show`-Rules, eigene Funktionen
 
 Unsere Shortcuts von vorhin sind deswegen Shortcuts, weil sie die Verwendung einer Funktion abkürzen. Man müsste statt `_Hervorgehoben_` immer `#emph()[Hervorgehoben]` schreiben. Weil wir aber den ganzen Kladderadaatsch nicht immer schreiben wollen, haben wir halt Shortcuts. Eins ist aber dasselbe wie das Andere. Beweis: _Hervorgehoben_ und #emph()[Hervorgehoben]. Es gibt eine Menge an Funktionen, die sich auf konkreten Text beziehen, und die Eigenschaften und Charakteristiken vom gesetzten Text bestimmen können. Wir haben nur eine kleine Auswahl kennen gelernt. 
 
-Für bestimmte Zeichen und Zeichenkombinationen nimmt Typst immer Ersetzungen vor (vorausgesetzt, wir befinden uns nicht in einem Code Fence oder im Code). Hier eine Liste:
+Für bestimmte Zeichen und Zeichenkombinationen nimmt Typst immer Ersetzungen vor (vorausgesetzt, wir befinden uns nicht in einem Code Fence oder im `Inline-Code`). Zb. werden typographisch korrekte 'einfache' und "doppelte" Anführungszeichen automatisch eingefügt -- oder kurze --- oder lange Gedankenstriche.
 
-Jetzt richten wir erst einmal unsrer _Seite_ ein.
+Wir können auuch unsere eigenen Auto-Ersetzungen vornehmen:
 
+// TODO: show-Regeln
 
 
 Man muß sich den ganzen Spaß nicht merken. Wenn man einige Typst-Dokumente wie  Aufsätze, Protokolle oder Hausarbeiten schreibt, geht das relativ schnell, weil man immer wieder nur die geichen Funktionen verwendet. Einer KI kann man das Typst-Handbuch als pdf füttern und dann einfach beschreiben, was man gerne hätte. 
 
-== Pakete & Templates
+== Alles Weitere -- Pakete & Templates
 
-Weil typst eine voll funktionsfähige Programmiersprache einbettet, lässt sich Typst auch unendlich erweitern. Es gibt deswegen inzwischen eine Vielzahl an Paketen, die den Funktionsumfang von Typst erweitern, beispielsweise neue Funktionen einführen, mit welchen man Diagramme oder, für die Humanities wichtig, Noten oder Betonungszeichen einfügen kann. Ein Paket kann kanz einfach eingebunden werden:
+Tpst kann noch sehr viel mehr -- Typst bettet eine komplette Programmiersprache an, mit `if`-Anweisungen `for`-Loops, Varibalen usw. Es gibt viele Funktionen in Tyspt, die hier nicht demonstriert wurden -- dazu gehören Tabellen, Inhaltsverzeichnisse, Blockzitate, Biliographie- und Quellenmanagement. Alles ist überraschend einfach, sobald man sich erst einmal daran gewöhnt hat. Wer einmal verstanden hat, wie man mit Typst produktiv umgeht, und außerdem nicht mehr alles genau nachschlagen muss, wird nicht mehr zurück in andere Textverarbeitsungsumgebungen wollen. Besonders Typst in Kombination mit IDE-Editoren wie vscode, zed oder neovim sind mächtige Werkzeuge, um ansprechende und anspruchsvolle Textdokumente zu erstellen.
+
+Typst hat ein eingbautes Paketsystem. Es gibt inzwischen eine Vielzahl an Paketen, die den Funktionsumfang von Typst erweitern, beispielsweise neue Funktionen einführen, mit welchen man Diagramme oder, für die Humanities wichtig, Noten oder Betonungszeichen einfügen kann. Ein Paket kann kanz einfach eingebunden werden:
 
 ```typst
 #import "@preview/touying:0.7.4": *
 ```
 
-und schon kann man im Flgenden eine PowePoint-Präsentation in Typst erstellen. Hier eine (kreative) Auswahl:
+und schon kann man im eine PowePoint-Präsentation in Typst erstellen. Hier eine (kreative) Auswahl:
 
 ```
 https://typst.app/universe/package/quill -- Elektik-Diagramme zeichnen 

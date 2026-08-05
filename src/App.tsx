@@ -151,6 +151,8 @@ function App() {
         onFoldingEnabledChange={settings.changeFoldingEnabled}
         autocompleteEnabled={settings.autocompleteEnabled}
         onAutocompleteEnabledChange={settings.changeAutocompleteEnabled}
+        semanticHighlightingEnabled={settings.semanticHighlightingEnabled}
+        onSemanticHighlightingEnabledChange={settings.changeSemanticHighlightingEnabled}
         errorHighlightingEnabled={settings.errorHighlightingEnabled}
         onErrorHighlightingEnabledChange={settings.changeErrorHighlightingEnabled}
         automaticErrorPopupEnabled={settings.automaticErrorPopupEnabled}
@@ -185,6 +187,9 @@ function App() {
           lightThemeEnabled={settings.lightThemeEnabled}
           foldingEnabled={settings.foldingEnabled}
           autocompleteEnabled={settings.autocompleteEnabled}
+          semanticHighlightingEnabled={settings.semanticHighlightingEnabled}
+          languageServerReady={languageServer.status.documentId === editor.activeDocument.id
+            && languageServer.status.state === 'ready'}
           errorHighlightingEnabled={settings.errorHighlightingEnabled}
           previewRenderBackoffMs={settings.previewRenderBackoffMs}
           compilationOpen={compilation.open}

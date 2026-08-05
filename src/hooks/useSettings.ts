@@ -33,6 +33,9 @@ export function useSettings() {
   const [autocompleteEnabled, setAutocompleteEnabled] = useState(() => (
     window.typstDesktop ? true : browserSetting('tedit.autocomplete', true)
   ))
+  const [semanticHighlightingEnabled, setSemanticHighlightingEnabled] = useState(() => (
+    window.typstDesktop ? true : browserSetting('tedit.semantic-highlighting', true)
+  ))
   const [errorHighlightingEnabled, setErrorHighlightingEnabled] = useState(() => (
     window.typstDesktop ? true : browserSetting('tedit.error-highlighting', true)
   ))
@@ -68,6 +71,10 @@ export function useSettings() {
   }, [autocompleteEnabled])
 
   useEffect(() => {
+    if (!window.typstDesktop) localStorage.setItem('tedit.semantic-highlighting', String(semanticHighlightingEnabled))
+  }, [semanticHighlightingEnabled])
+
+  useEffect(() => {
     if (!window.typstDesktop) localStorage.setItem('tedit.error-highlighting', String(errorHighlightingEnabled))
   }, [errorHighlightingEnabled])
 
@@ -87,6 +94,7 @@ export function useSettings() {
       setLightThemeEnabled(settings.lightThemeEnabled)
       setFoldingEnabled(settings.foldingEnabled)
       setAutocompleteEnabled(settings.autocompleteEnabled)
+      setSemanticHighlightingEnabled(settings.semanticHighlightingEnabled)
       setErrorHighlightingEnabled(settings.errorHighlightingEnabled)
       setAutomaticErrorPopupEnabled(settings.automaticErrorPopupEnabled)
       setPreviewRenderBackoffMs(settings.previewRenderBackoffMs)
@@ -109,6 +117,7 @@ export function useSettings() {
     lightThemeEnabled,
     foldingEnabled,
     autocompleteEnabled,
+    semanticHighlightingEnabled,
     errorHighlightingEnabled,
     automaticErrorPopupEnabled,
     previewRenderBackoffMs,
@@ -118,6 +127,11 @@ export function useSettings() {
     changeLightThemeEnabled: (value: boolean) => changeSetting('lightThemeEnabled', value, setLightThemeEnabled),
     changeFoldingEnabled: (value: boolean) => changeSetting('foldingEnabled', value, setFoldingEnabled),
     changeAutocompleteEnabled: (value: boolean) => changeSetting('autocompleteEnabled', value, setAutocompleteEnabled),
+    changeSemanticHighlightingEnabled: (value: boolean) => changeSetting(
+      'semanticHighlightingEnabled',
+      value,
+      setSemanticHighlightingEnabled,
+    ),
     changeErrorHighlightingEnabled: (value: boolean) => changeSetting('errorHighlightingEnabled', value, setErrorHighlightingEnabled),
     changeAutomaticErrorPopupEnabled: (value: boolean) => changeSetting('automaticErrorPopupEnabled', value, setAutomaticErrorPopupEnabled),
     changePreviewRenderBackoffMs: (value: number) => changeSetting(

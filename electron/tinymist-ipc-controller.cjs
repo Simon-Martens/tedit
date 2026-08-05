@@ -191,6 +191,19 @@ function createTinymistIpcController({ app, handleIpc, isAllowedPreviewRoot, onI
     if (!service) throw new Error('Tinymist language server is not running for this document.')
     return service.complete({ ...request, openDocuments })
   })
+  handleIpc('tinymist-lsp:semantic-tokens', async (_event, request) => {
+    if (
+      typeof request?.documentId !== 'string'
+      || typeof request.source !== 'string'
+      || !Number.isSafeInteger(request.sourceVersion)
+      || request.sourceVersion < 0
+      || Buffer.byteLength(request.source) > 8 * 1024 * 1024
+    ) throw new Error('Invalid Tinymist semantic-token request.')
+    const openDocuments = registry.normalizeLanguageServerDocuments(request.openDocuments)
+    const service = lspServices.get(request.documentId)?.service
+    if (!service) return null
+    return service.semanticTokens({ ...request, openDocuments })
+  })
   handleIpc('tinymist-lsp:compile', async (_event, request) => {
     try {
       if (

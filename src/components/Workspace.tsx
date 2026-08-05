@@ -35,6 +35,8 @@ export function Workspace({
   lightThemeEnabled,
   foldingEnabled,
   autocompleteEnabled,
+  semanticHighlightingEnabled,
+  languageServerReady,
   errorHighlightingEnabled,
   previewRenderBackoffMs,
   compilationOpen,
@@ -60,6 +62,8 @@ export function Workspace({
   lightThemeEnabled: boolean
   foldingEnabled: boolean
   autocompleteEnabled: boolean
+  semanticHighlightingEnabled: boolean
+  languageServerReady: boolean
   errorHighlightingEnabled: boolean
   previewRenderBackoffMs: number
   compilationOpen: boolean
@@ -136,6 +140,8 @@ export function Workspace({
             lightThemeEnabled={lightThemeEnabled}
             foldingEnabled={foldingEnabled}
             autocompleteEnabled={autocompleteEnabled}
+            semanticHighlightingEnabled={semanticHighlightingEnabled}
+            languageServerReady={languageServerReady}
             errorHighlightingEnabled={errorHighlightingEnabled}
             onCursorPositionChange={onCursorPositionChange}
             sourceReveal={sourceReveal}

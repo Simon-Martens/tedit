@@ -24,6 +24,8 @@ interface ToolbarProps {
   onFoldingEnabledChange(enabled: boolean): void
   autocompleteEnabled: boolean
   onAutocompleteEnabledChange(enabled: boolean): void
+  semanticHighlightingEnabled: boolean
+  onSemanticHighlightingEnabledChange(enabled: boolean): void
   errorHighlightingEnabled: boolean
   onErrorHighlightingEnabledChange(enabled: boolean): void
   automaticErrorPopupEnabled: boolean
@@ -60,6 +62,8 @@ function ToolbarContent({
   onFoldingEnabledChange,
   autocompleteEnabled,
   onAutocompleteEnabledChange,
+  semanticHighlightingEnabled,
+  onSemanticHighlightingEnabledChange,
   errorHighlightingEnabled,
   onErrorHighlightingEnabledChange,
   automaticErrorPopupEnabled,
@@ -128,6 +132,8 @@ function ToolbarContent({
           onFoldingEnabledChange={onFoldingEnabledChange}
           autocompleteEnabled={autocompleteEnabled}
           onAutocompleteEnabledChange={onAutocompleteEnabledChange}
+          semanticHighlightingEnabled={semanticHighlightingEnabled}
+          onSemanticHighlightingEnabledChange={onSemanticHighlightingEnabledChange}
           errorHighlightingEnabled={errorHighlightingEnabled}
           onErrorHighlightingEnabledChange={onErrorHighlightingEnabledChange}
           automaticErrorPopupEnabled={automaticErrorPopupEnabled}
@@ -155,6 +161,7 @@ const MemoizedToolbar = memo(ToolbarContent, (previous, next) => (
   && previous.lightThemeEnabled === next.lightThemeEnabled
   && previous.foldingEnabled === next.foldingEnabled
   && previous.autocompleteEnabled === next.autocompleteEnabled
+  && previous.semanticHighlightingEnabled === next.semanticHighlightingEnabled
   && previous.errorHighlightingEnabled === next.errorHighlightingEnabled
   && previous.automaticErrorPopupEnabled === next.automaticErrorPopupEnabled
   && previous.previewRenderBackoffMs === next.previewRenderBackoffMs
@@ -170,6 +177,7 @@ export function Toolbar(props: ToolbarProps) {
   const onLightThemeEnabledChange = useLatestCallback(props.onLightThemeEnabledChange)
   const onFoldingEnabledChange = useLatestCallback(props.onFoldingEnabledChange)
   const onAutocompleteEnabledChange = useLatestCallback(props.onAutocompleteEnabledChange)
+  const onSemanticHighlightingEnabledChange = useLatestCallback(props.onSemanticHighlightingEnabledChange)
   const onErrorHighlightingEnabledChange = useLatestCallback(props.onErrorHighlightingEnabledChange)
   const onAutomaticErrorPopupEnabledChange = useLatestCallback(props.onAutomaticErrorPopupEnabledChange)
   const onPreviewRenderBackoffMsChange = useLatestCallback(props.onPreviewRenderBackoffMsChange)
@@ -185,6 +193,7 @@ export function Toolbar(props: ToolbarProps) {
     onLightThemeEnabledChange={onLightThemeEnabledChange}
     onFoldingEnabledChange={onFoldingEnabledChange}
     onAutocompleteEnabledChange={onAutocompleteEnabledChange}
+    onSemanticHighlightingEnabledChange={onSemanticHighlightingEnabledChange}
     onErrorHighlightingEnabledChange={onErrorHighlightingEnabledChange}
     onAutomaticErrorPopupEnabledChange={onAutomaticErrorPopupEnabledChange}
     onPreviewRenderBackoffMsChange={onPreviewRenderBackoffMsChange}

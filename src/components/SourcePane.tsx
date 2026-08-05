@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import Editor, { type EditorProps, type OnChange, type OnMount } from '@monaco-editor/react'
-import type { editor as MonacoEditor, languages as MonacoLanguages, Position } from 'monaco-editor'
+import type { CancellationToken, editor as MonacoEditor, languages as MonacoLanguages, Position } from 'monaco-editor'
 import { initVimMode, VimMode, type VimAdapterInstance } from 'monaco-vim'
 import { configureTypstLanguage, getTypstFoldingRanges } from '../lib/typstLanguage'
 import { reportError } from '../lib/logging'
@@ -26,6 +26,14 @@ interface VimClipboardApi {
 let fallbackClipboard = ''
 const textEncoder = new TextEncoder()
 const editorLoading = <div className="editor-loading">Loading Monaco editor...</div>
+const semanticTokenLegend = {
+  tokenTypes: [
+    'comment', 'string', 'keyword', 'operator', 'number', 'function', 'decorator', 'type', 'namespace',
+    'bool', 'punct', 'escape', 'link', 'raw', 'label', 'ref', 'heading', 'marker', 'term', 'delim',
+    'pol', 'error', 'text',
+  ],
+  tokenModifiers: ['strong', 'emph', 'math', 'readonly', 'static', 'defaultLibrary'],
+}
 const sourceEditorOptions = {
   automaticLayout: true,
   wordWrap: 'on',
@@ -150,6 +158,8 @@ export function SourcePane({
   lightThemeEnabled,
   foldingEnabled,
   autocompleteEnabled,
+  semanticHighlightingEnabled,
+  languageServerReady,
   errorHighlightingEnabled,
   onCursorPositionChange,
   sourceReveal,
@@ -175,6 +185,8 @@ export function SourcePane({
   lightThemeEnabled: boolean
   foldingEnabled: boolean
   autocompleteEnabled: boolean
+  semanticHighlightingEnabled: boolean
+  languageServerReady: boolean
   errorHighlightingEnabled: boolean
   onCursorPositionChange(location: SourceCursorLocation): void
   sourceReveal?: PreviewSourceReveal
@@ -203,6 +215,7 @@ export function SourcePane({
   const historyListenerRef = useRef<{ dispose(): void } | null>(null)
   const findActionRef = useRef<{ dispose(): void } | null>(null)
   const completionProviderRef = useRef<{ dispose(): void } | null>(null)
+  const semanticTokensProviderRef = useRef<{ dispose(): void } | null>(null)
   const cursorFrameRef = useRef<number | undefined>(undefined)
   const pendingCursorRef = useRef<{ lineNumber: number; column: number } | undefined>(undefined)
   const pendingSourceRef = useRef<string | undefined>(undefined)
@@ -213,6 +226,8 @@ export function SourcePane({
   const initiallyCollapsedModelsRef = useRef(new Set<string>())
   const foldingEnabledRef = useRef(foldingEnabled)
   const autocompleteEnabledRef = useRef(autocompleteEnabled)
+  const semanticHighlightingEnabledRef = useRef(semanticHighlightingEnabled)
+  const languageServerReadyRef = useRef(languageServerReady)
   const errorHighlightingEnabledRef = useRef(errorHighlightingEnabled)
   const languageServerDiagnosticsCurrent = document.languageServerDiagnosticsSourceVersion === document.sourceRevision
     && document.languageServerDiagnosticsClientVersion === document.sourceRevision + document.dependencyRevision
@@ -239,6 +254,8 @@ export function SourcePane({
   languageServerDocumentsRef.current = languageServerDocuments
   foldingEnabledRef.current = foldingEnabled
   autocompleteEnabledRef.current = autocompleteEnabled
+  semanticHighlightingEnabledRef.current = semanticHighlightingEnabled
+  languageServerReadyRef.current = languageServerReady
   errorHighlightingEnabledRef.current = errorHighlightingEnabled
   diagnosticsRef.current = diagnostics
   editorChangeHandlerRef.current ??= (value) => {
@@ -410,6 +427,61 @@ export function SourcePane({
     }))
   }
 
+  const registerSemanticTokensProvider = () => {
+    semanticTokensProviderRef.current?.dispose()
+    semanticTokensProviderRef.current = null
+    const monaco = monacoRef.current
+    const editor = editorRef.current
+    if (
+      !monaco
+      || !editor
+      || !semanticHighlightingEnabledRef.current
+      || !languageServerReadyRef.current
+    ) return
+    semanticTokensProviderRef.current = monaco.languages.registerDocumentSemanticTokensProvider('typst', {
+      getLegend: () => semanticTokenLegend,
+      provideDocumentSemanticTokens: async (
+        model: MonacoEditor.ITextModel,
+        _lastResultId: string | null,
+        cancellationToken: CancellationToken,
+      ) => {
+        const desktop = window.typstDesktop
+        if (!desktop || model !== editor.getModel() || cancellationToken.isCancellationRequested) return null
+        const currentDocument = documentRef.current
+        const source = model.getValue()
+        let activeDocumentFound = false
+        const openDocuments = languageServerDocumentsRef.current.map((openDocument) => {
+          if (openDocument.documentId !== currentDocument.id) return openDocument
+          activeDocumentFound = true
+          if (openDocument.source === source) return openDocument
+          return {
+            ...openDocument,
+            source,
+            version: openDocument.version + 1,
+            sourceVersion: openDocument.sourceVersion + 1,
+          }
+        })
+        if (currentDocument.filePath && !activeDocumentFound) return null
+        try {
+          const result = await desktop.semanticTokensWithLanguageServer({
+            documentId: currentDocument.id,
+            source,
+            sourceVersion: activeDocumentFound
+              ? openDocuments.find(({ documentId }) => documentId === currentDocument.id)!.sourceVersion
+              : currentDocument.sourceRevision + (currentDocument.source === source ? 0 : 1),
+            openDocuments,
+          })
+          if (!result || cancellationToken.isCancellationRequested || model !== editor.getModel()) return null
+          return { resultId: result.resultId, data: Uint32Array.from(result.data) }
+        } catch (error) {
+          if (!cancellationToken.isCancellationRequested) reportError('tinymist-semantic-tokens', error)
+          return null
+        }
+      },
+      releaseDocumentSemanticTokens: () => undefined,
+    })
+  }
+
   useLayoutEffect(() => {
     const editor = editorRef.current
     const position = editor?.getPosition()
@@ -475,6 +547,11 @@ export function SourcePane({
   }, [autocompleteEnabled])
 
   useEffect(() => {
+    editorRef.current?.updateOptions({ 'semanticHighlighting.enabled': semanticHighlightingEnabled })
+    registerSemanticTokensProvider()
+  }, [semanticHighlightingEnabled, languageServerReady])
+
+  useEffect(() => {
     const commands = VimMode.commands as typeof VimMode.commands & { save?: () => void }
     const save = () => saveCallbackRef.current()
     commands.save = save
@@ -492,6 +569,7 @@ export function SourcePane({
       historyListenerRef.current?.dispose()
       findActionRef.current?.dispose()
       completionProviderRef.current?.dispose()
+      semanticTokensProviderRef.current?.dispose()
       if (cursorFrameRef.current !== undefined) cancelAnimationFrame(cursorFrameRef.current)
       const model = editorRef.current?.getModel()
       if (model) monacoRef.current?.editor.setModelMarkers(model, 'typst', [])
@@ -682,6 +760,7 @@ export function SourcePane({
                 }
               },
             })
+            registerSemanticTokensProvider()
             const collapseInitialModel = () => {
               const model = editor.getModel()
               const modelId = model?.uri.toString()
@@ -766,7 +845,9 @@ export function SourcePane({
           path={`tedit://${document.id}.typ`}
           defaultValue={defaultSource}
           onChange={editorChangeHandlerRef.current}
-          theme={lightThemeEnabled ? 'vs' : 'vs-dark'}
+          theme={semanticHighlightingEnabled
+            ? lightThemeEnabled ? 'tedit-semantic-light' : 'tedit-semantic-dark'
+            : lightThemeEnabled ? 'vs' : 'vs-dark'}
           loading={editorLoading}
           options={sourceEditorOptions}
         />

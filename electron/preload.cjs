@@ -77,6 +77,7 @@ contextBridge.exposeInMainWorld('typstDesktop', {
   startLanguageServer: (request) => ipcRenderer.invoke('tinymist-lsp:start', request),
   syncLanguageServerDocuments: (request) => ipcRenderer.invoke('tinymist-lsp:sync-documents', request),
   completeWithLanguageServer: (request) => ipcRenderer.invoke('tinymist-lsp:complete', request),
+  semanticTokensWithLanguageServer: (request) => ipcRenderer.invoke('tinymist-lsp:semantic-tokens', request),
   compileWithLanguageServer: (request) => ipcRenderer.invoke('tinymist-lsp:compile', request),
   stopLanguageServer: (request) => ipcRenderer.send('tinymist-lsp:stop', request),
   onLanguageServerStatus: (listener) => {
