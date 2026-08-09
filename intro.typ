@@ -50,7 +50,7 @@ Das war's mit der ersten Seite und Vanilla-Typst-Features. Vielleicht noch zulet
 
 #pagebreak()
 
-== \#Code...
+== `#Code...`
 
 Mit der Zeile
 
@@ -60,7 +60,7 @@ Mit der Zeile
 
 haben wir schon die bedeutsamste Neuerung  im Vergleich zu herkömmlichen Textformaten gesehen: in Typst vermischt sich _Text_ mit _Code,_ um das final ausgegbene Dokument nach Anweisung zu erstellen.
 Die _Funktion_ `#pagebreak()` löst einen erzwungenen Seitenumbruch aus; und zwar genau an der Stelle, an welcher sie aufgerufen wird.
-Die Mögichkeit, mit Code zu arbeiten, mascht Typst erst interessant und nützlich.
+Die Möglichkeit, mit Code zu arbeiten, macht Typst erst interessant und nützlich.
 Die eingestreuten Anweisungen erlauben uns, das Dokument genau so zu gestalten, wie wir es haben wollen.
 Die Möglichkeit, Seiten, Absätze und Text zu programmieren (in \~Etwa analog zu Seiten-, Absatz- und Zeichenformaten), gibt Typst einen viel größeren Funktionumfang als _WYSIWYG-Editoren_#footnote[_What You See Is What You Get_ -- wie Word, LibreOffice oder InDesign. Ganz anders hier: hier wird Quellcode geschrieben, and what you get is what you don't see -- it's what you tell the program to do.].
 

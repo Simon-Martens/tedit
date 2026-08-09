@@ -1,6 +1,8 @@
 const { createHash } = require('node:crypto')
 const path = require('node:path')
 
+// This object is our registry; it is a pure data holder for open document, document roots etc.
+// It can keep track of the disk versions and chack if documents were changed by content hash...
 function createDocumentRegistry() {
   const allowedDocumentPaths = new Set()
   const diskVersions = new Map()
@@ -15,6 +17,7 @@ function createDocumentRegistry() {
     return createHash('sha256').update(content).digest('hex')
   }
 
+	// INFO: eg. executed when a file is opened
   function rememberDocument(filePath, content) {
     const normalizedPath = normalizeDocumentPath(filePath)
     const diskVersion = contentVersion(content)

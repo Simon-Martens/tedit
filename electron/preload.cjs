@@ -1,5 +1,12 @@
 const { contextBridge, ipcRenderer } = require('electron')
 
+// INFO: this creates window.typstDesktop in React world, where we can call these
+// So the window does not get the renderer directly, but only htese methods (to call the services etc)
+// invoke() returns a promise to the result
+// send() is a one-way action
+// listener -> allows the react context to listen to renderer thread events it can subscribe to:
+// window.webContents.send('document:change', payload) -- the event payload (privileged) is removed
+// sendSync() syncronous calls, do not return a promise but a result
 contextBridge.exposeInMainWorld('typstDesktop', {
   openDocument: () => ipcRenderer.invoke('document:open'),
   saveDocument: (request) => ipcRenderer.invoke('document:save', request),
@@ -14,6 +21,9 @@ contextBridge.exposeInMainWorld('typstDesktop', {
   onDocumentChange: (listener) => {
     const handler = (_event, payload) => listener(payload)
     ipcRenderer.on('document:change', handler)
+		// INFO: Here we return a functon, so react can call this multiple times on different documents etc. when removing o mounting components
+		// We call the returned function so listeners do not accumulate
+		// Same everywhere else
     return () => ipcRenderer.removeListener('document:change', handler)
   },
   resolveDocumentConflict: (request) => ipcRenderer.invoke('document:resolve-conflict', request),

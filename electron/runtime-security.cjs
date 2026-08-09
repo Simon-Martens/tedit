@@ -3,9 +3,12 @@ const path = require('node:path')
 const { pathToFileURL } = require('node:url')
 const { logFailure } = require('./logging.cjs')
 
+// INDO: only REGISTRATION, not registering a HANDLER for the custom PROTOCOL tedit-docs://
+// Must happen before app.whenReady()
 function registerDocumentationScheme(protocol) {
   protocol.registerSchemesAsPrivileged([{
     scheme: 'tedit-docs',
+		// INFO: standard: behaves like an URL, secure: HTTPS, fetch API enabled + CORS
     privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true },
   }])
 }
@@ -57,6 +60,8 @@ function configureDocumentationProtocol({ isDevelopment, net, protocol, resource
   })
 }
 
+// INFO: we disable almost all OS access, except fonts
+// No camera, mics, location, notifications, MIDI, screen capture etc.
 function configurePermissions({ appEntryUrl, isDevelopment, session, trustedWebContentsIds }) {
   function isAppOrigin(webContents, origin) {
     if (!webContents || !trustedWebContentsIds.has(webContents.id)) return false

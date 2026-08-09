@@ -3,6 +3,7 @@ const { logFailure } = require('./logging.cjs')
 function createIpcSecurity({ appEntryUrl, ipcMain, trustedWebContentsIds }) {
   function assertTrustedIpc(event, channel) {
     const frame = event.senderFrame
+		// Trusted window, no (embedded) iFrame (so no loaded external content), 
     if (
       !trustedWebContentsIds.has(event.sender.id)
       || !frame
@@ -13,6 +14,8 @@ function createIpcSecurity({ appEntryUrl, ipcMain, trustedWebContentsIds }) {
     }
   }
 
+	// INFO: handleIpc and onIpc are WRAPPERS, that validate every IPC request
+	// handle: request-response; on: signals, fire-and-forget Ipc requests
   function handleIpc(channel, listener) {
     ipcMain.handle(channel, async (event, ...args) => {
       try {

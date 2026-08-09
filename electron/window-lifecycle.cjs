@@ -60,6 +60,8 @@ function createWindowLifecycle({
     owner.close()
   })
 
+	// INFO: here the main window is created
+	// We disable direct calling of node internals, activate the sandbox, we run preload code and webiste code in different contexts
   function createWindow() {
     const window = new BrowserWindow({
       width: 1440,
@@ -77,6 +79,8 @@ function createWindowLifecycle({
         sandbox: true,
       },
     })
+
+		// INFO: we add this to be able to validate messsages (if they come from our window or not)
     trustedWebContentsIds.add(window.webContents.id)
     const webContentsId = window.webContents.id
     const closeState = { approved: false, pending: false, timeout: undefined }
@@ -129,6 +133,8 @@ function createWindowLifecycle({
         return false
       }
     }
+
+		// IMPORTANT: we do not allow navigating away from our tedit window or the doc or the pdf
     const blockUnexpectedNavigation = (details) => {
       const allowed = details.isMainFrame
         ? details.url === appEntryUrl
