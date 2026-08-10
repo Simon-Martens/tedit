@@ -35,6 +35,7 @@ export function Workspace({
   showPreviewPosition,
   previewClickNavigationEnabled,
   previewMode,
+  previewModeReady,
   autoScrollEnabled,
   lightThemeEnabled,
   foldingEnabled,
@@ -64,6 +65,7 @@ export function Workspace({
   showPreviewPosition: boolean
   previewClickNavigationEnabled: boolean
   previewMode: PreviewMode
+  previewModeReady: boolean
   autoScrollEnabled: boolean
   lightThemeEnabled: boolean
   foldingEnabled: boolean
@@ -225,7 +227,19 @@ export function Workspace({
         aria-label="Typst preview and compilation output"
         className={`right-pane ${compilationOpen ? 'output-open' : 'output-hidden'}`}
       >
-        {previewMode === 'html' ? (
+        {!previewModeReady ? (
+          <section className="preview-panel" aria-label="Typst preview">
+            <div className="panel-heading preview-heading">
+              <span className="preview-label">Typst Preview</span>
+            </div>
+            <div className="preview-surface">
+              <div className="preview-empty">
+                <div className="loader" />
+                <strong>Loading preview settings</strong>
+              </div>
+            </div>
+          </section>
+        ) : previewMode === 'html' ? (
           <TypstHtmlPreview
             document={document}
             previewRoots={previewRoots}

@@ -17,7 +17,13 @@ self.MonacoEnvironment = {
 }
 loader.config({ monaco })
 
-window.addEventListener('error', (event) => reportError('renderer-error', event.error ?? event.message))
+window.addEventListener('error', (event) => {
+  if (event.message === 'ResizeObserver loop completed with undelivered notifications.') {
+    event.preventDefault()
+    return
+  }
+  reportError('renderer-error', event.error ?? event.message)
+})
 window.addEventListener('unhandledrejection', (event) => reportError('unhandled-rejection', event.reason))
 
 createRoot(document.getElementById('root')!).render(

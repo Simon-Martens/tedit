@@ -62,7 +62,13 @@ function configureDocumentationProtocol({ isDevelopment, net, protocol, resource
 
 // INFO: we disable almost all OS access, except fonts
 // No camera, mics, location, notifications, MIDI, screen capture etc.
-function configurePermissions({ appEntryUrl, isDevelopment, session, trustedWebContentsIds }) {
+function configurePermissions({
+  appEntryUrl,
+  isDevelopment,
+  onDevelopmentNetworkChange,
+  session,
+  trustedWebContentsIds,
+}) {
   function isAppOrigin(webContents, origin) {
     if (!webContents || !trustedWebContentsIds.has(webContents.id)) return false
     try {
@@ -79,9 +85,21 @@ function configurePermissions({ appEntryUrl, isDevelopment, session, trustedWebC
   appSession.webRequest.onErrorOccurred((details) => {
     if (isDevelopment) {
       if (details.error === 'net::ERR_CACHE_MISS' && details.resourceType === 'font') return
+      if (details.error === 'net::ERR_NETWORK_CHANGED' && trustedWebContentsIds.has(details.webContentsId)) {
+        try {
+          if (new URL(details.url).origin === new URL(appEntryUrl).origin) {
+            if (onDevelopmentNetworkChange?.(details.webContentsId)) return
+          }
+        } catch {}
+      }
       if (details.error === 'net::ERR_ABORTED') {
         try {
-          if (new URL(details.url).origin === new URL(appEntryUrl).origin) return
+          const origin = new URL(details.url).origin
+          if (
+            origin === new URL(appEntryUrl).origin
+            || origin === 'https://fonts.googleapis.com'
+            || origin === 'https://fonts.gstatic.com'
+          ) return
         } catch {}
       }
     }

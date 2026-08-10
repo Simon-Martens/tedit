@@ -8,6 +8,7 @@ function createWindowLifecycle({
   dialog,
   handleIpc,
   isDevelopment,
+  net,
   onIpc,
   stopBibliography,
   stopPreviewDiscovery,
@@ -15,6 +16,111 @@ function createWindowLifecycle({
   trustedWebContentsIds,
 }) {
   const windowCloseStates = new Map()
+  const DEVELOPMENT_RECOVERY_SETTLE_MS = 800
+  const DEVELOPMENT_RECOVERY_RETRY_MS = 1_500
+
+  function retryDevelopmentRecovery(window, state) {
+    if (window.isDestroyed()) return
+    clearTimeout(state.recoveryTimer)
+    state.recoveryTimer = setTimeout(() => {
+      state.recoveryTimer = undefined
+      void recoverDevelopmentWindow(window, state)
+    }, DEVELOPMENT_RECOVERY_RETRY_MS)
+  }
+
+  function scheduleDevelopmentRecovery(webContentsId) {
+    if (!isDevelopment) return false
+    const window = BrowserWindow.getAllWindows().find((candidate) => candidate.webContents.id === webContentsId)
+    const state = window ? windowCloseStates.get(window.id) : undefined
+    if (!window || !state || window.isDestroyed()) return false
+    state.recoveryErrors += 1
+    state.lastRecoveryErrorAt = Date.now()
+    if (state.recoveryProbing || state.recoveryReloading) return true
+    clearTimeout(state.recoveryTimer)
+    state.recoveryTimer = setTimeout(() => {
+      state.recoveryTimer = undefined
+      void recoverDevelopmentWindow(window, state)
+    }, DEVELOPMENT_RECOVERY_SETTLE_MS)
+    return true
+  }
+
+  async function recoverDevelopmentWindow(window, state) {
+    if (window.isDestroyed() || state.recoveryProbing || state.recoveryReloading) return
+    if (state.pending) {
+      retryDevelopmentRecovery(window, state)
+      return
+    }
+    const quietFor = Date.now() - state.lastRecoveryErrorAt
+    if (quietFor < DEVELOPMENT_RECOVERY_SETTLE_MS) {
+      clearTimeout(state.recoveryTimer)
+      state.recoveryTimer = setTimeout(() => {
+        state.recoveryTimer = undefined
+        void recoverDevelopmentWindow(window, state)
+      }, DEVELOPMENT_RECOVERY_SETTLE_MS - quietFor)
+      return
+    }
+    state.recoveryProbing = true
+    try {
+      const rendererIsHealthy = (timeoutMs) => {
+        let timeout
+        return Promise.race([
+          window.webContents.executeJavaScript(
+            "Boolean(document.querySelector('.app-shell'))",
+            true,
+          ).catch(() => false),
+          new Promise((resolve) => {
+            timeout = setTimeout(() => resolve(false), timeoutMs)
+          }),
+        ]).finally(() => clearTimeout(timeout))
+      }
+      const rendererHealthy = await rendererIsHealthy(1_500)
+      if (rendererHealthy) {
+        const errorCount = state.recoveryErrors
+        state.recoveryErrors = 0
+        console.warn(`[tedit:development-recovery] Ignored ${errorCount} transient Vite request failures after a network change.`)
+        return
+      }
+      const controller = new AbortController()
+      const timeout = setTimeout(() => controller.abort(), 2_000)
+      let response
+      try {
+        response = await net.fetch(appEntryUrl, {
+          cache: 'no-store',
+          signal: controller.signal,
+        })
+      } finally {
+        clearTimeout(timeout)
+      }
+      if (!response.ok) throw new Error(`Vite returned ${response.status}.`)
+      if (window.isDestroyed()) return
+      if (await rendererIsHealthy(500)) {
+        const errorCount = state.recoveryErrors
+        state.recoveryErrors = 0
+        console.warn(`[tedit:development-recovery] Renderer recovered after ${errorCount} transient Vite request failures.`)
+        return
+      }
+      if (state.pending) {
+        retryDevelopmentRecovery(window, state)
+        return
+      }
+      state.recoveryReloading = true
+      const errorCount = state.recoveryErrors
+      await window.loadURL(appEntryUrl)
+      state.recoveryErrors = 0
+      console.warn(`[tedit:development-recovery] Reloaded after ${errorCount} requests failed during a network change.`)
+    } catch (error) {
+      if (window.isDestroyed()) return
+      if (state.recoveryReloading) logFailure('development-recovery', error, { url: appEntryUrl })
+      retryDevelopmentRecovery(window, state)
+    } finally {
+      state.recoveryProbing = false
+      state.recoveryReloading = false
+      if (state.closeAfterRecovery && !window.isDestroyed()) {
+        state.closeAfterRecovery = false
+        window.close()
+      }
+    }
+  }
 
   handleIpc('app:resolve-close', async (event, request) => {
     const owner = BrowserWindow.fromWebContents(event.sender)
@@ -83,12 +189,26 @@ function createWindowLifecycle({
 		// INFO: we add this to be able to validate messsages (if they come from our window or not)
     trustedWebContentsIds.add(window.webContents.id)
     const webContentsId = window.webContents.id
-    const closeState = { approved: false, pending: false, timeout: undefined }
+    const closeState = {
+      approved: false,
+      pending: false,
+      timeout: undefined,
+      recoveryErrors: 0,
+      lastRecoveryErrorAt: 0,
+      recoveryProbing: false,
+      recoveryReloading: false,
+      recoveryTimer: undefined,
+      closeAfterRecovery: false,
+    }
     windowCloseStates.set(window.id, closeState)
 
     window.on('close', (event) => {
       if (closeState.approved) return
       event.preventDefault()
+      if (closeState.recoveryReloading) {
+        closeState.closeAfterRecovery = true
+        return
+      }
       if (closeState.pending) return
       closeState.pending = true
       window.webContents.send('app:request-close')
@@ -117,6 +237,7 @@ function createWindowLifecycle({
     })
     window.once('closed', () => {
       clearTimeout(closeState.timeout)
+      clearTimeout(closeState.recoveryTimer)
       windowCloseStates.delete(window.id)
       trustedWebContentsIds.delete(webContentsId)
       stopBibliography(webContentsId)
@@ -158,6 +279,10 @@ function createWindowLifecycle({
       logFailure('preload', error, { preloadPath })
     })
     window.webContents.on('did-fail-load', (_event, code, description, url, isMainFrame) => {
+      if (isDevelopment && isMainFrame && [-21, -102, -105, -106, -118].includes(code) && url === appEntryUrl) {
+        scheduleDevelopmentRecovery(webContentsId)
+        return
+      }
       if (code !== -3) logFailure('load', new Error(description), { code, url, isMainFrame })
     })
     window.webContents.on('render-process-gone', (_event, details) => {
@@ -182,7 +307,7 @@ function createWindowLifecycle({
     void load.catch((error) => logFailure('window-load', error, { url: appEntryUrl }))
   }
 
-  return { createWindow }
+  return { createWindow, scheduleDevelopmentRecovery }
 }
 
 module.exports = { createWindowLifecycle }

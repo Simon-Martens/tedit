@@ -28,7 +28,7 @@ app.setPath('userData', path.join(app.getPath('appData'), 'tedit'))
 // BUG: sometimes it is faster on linux to disable hardware acc
 if (process.env.TEDIT_DISABLE_HARDWARE_ACCELERATION === '1') app.disableHardwareAcceleration()
 
-const isDevelopment = Boolean(process.env.VITE_DEV_SERVER_URL)
+const isDevelopment = !app.isPackaged && Boolean(process.env.VITE_DEV_SERVER_URL)
 const trustedWebContentsIds = new Set()
 
 // INFO: We have a server to dynamically serve interface comonents in dev mode, so relaods can happen faster using the power of vite.
@@ -125,6 +125,7 @@ function startPrimaryInstance() {
     dialog,
     handleIpc,
     isDevelopment,
+    net,
     onIpc,
     stopBibliography: bibliographyIpc.revokeForWebContents,
     stopPreviewDiscovery: previewDiscovery.stopForWebContents,
@@ -159,7 +160,13 @@ function startPrimaryInstance() {
     if (process.platform !== 'darwin') Menu.setApplicationMenu(null)
 
 		// See: runtime-security.cjs
-    configurePermissions({ appEntryUrl, isDevelopment, session, trustedWebContentsIds })
+    configurePermissions({
+      appEntryUrl,
+      isDevelopment,
+      onDevelopmentNetworkChange: windowLifecycle.scheduleDevelopmentRecovery,
+      session,
+      trustedWebContentsIds,
+    })
 
 		// INFO: Now we register the Typst documentation handler (above was jsut the scheme registation)
     configureDocumentationProtocol({ isDevelopment, net, protocol, resourcesPath: process.resourcesPath })

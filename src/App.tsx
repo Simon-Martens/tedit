@@ -35,14 +35,14 @@ function App() {
     editor.updateDocument,
   )
   useTypstCompilation(
-    editor.activeDocument,
+    settings.loaded ? editor.activeDocument : undefined,
     editor.documents,
     editor.updateDocument,
     languageServer.status,
     settings.previewMode === 'html',
   )
   const sourcePreviewSync = useSourcePreviewSync(
-    editor.activeDocument,
+    settings.loaded ? editor.activeDocument : undefined,
     editor.documents,
     settings.previewMode !== 'html',
   )
@@ -190,6 +190,7 @@ function App() {
           showPreviewPosition={settings.showPreviewPosition}
           previewClickNavigationEnabled={settings.previewClickNavigationEnabled}
           previewMode={settings.previewMode}
+          previewModeReady={settings.loaded}
           autoScrollEnabled={settings.autoScrollEnabled}
           lightThemeEnabled={settings.lightThemeEnabled}
           foldingEnabled={settings.foldingEnabled}

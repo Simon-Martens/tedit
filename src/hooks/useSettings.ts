@@ -21,6 +21,7 @@ function browserPreviewMode(): PreviewMode {
 }
 
 export function useSettings() {
+  const [loaded, setLoaded] = useState(() => !window.typstDesktop)
   const [vimEnabled, setVimEnabled] = useState(() => (
     window.typstDesktop ? false : browserSetting('tedit.vim-mode', false)
   ))
@@ -109,7 +110,11 @@ export function useSettings() {
   }, [previewRenderBackoffMs])
 
   useEffect(() => {
-    window.typstDesktop?.getSettings().then((settings) => {
+    const desktop = window.typstDesktop
+    if (!desktop) return
+    let cancelled = false
+    desktop.getSettings().then((settings) => {
+      if (cancelled) return
       setVimEnabled(settings.vimEnabled)
       setShowPreviewPosition(settings.showPreviewPosition)
       setPreviewClickNavigationEnabled(settings.previewClickNavigationEnabled)
@@ -122,7 +127,12 @@ export function useSettings() {
       setErrorHighlightingEnabled(settings.errorHighlightingEnabled)
       setAutomaticErrorPopupEnabled(settings.automaticErrorPopupEnabled)
       setPreviewRenderBackoffMs(settings.previewRenderBackoffMs)
-    }).catch((error) => reportError('settings-load', error))
+    }).catch((error) => {
+      if (!cancelled) reportError('settings-load', error)
+    }).finally(() => {
+      if (!cancelled) setLoaded(true)
+    })
+    return () => { cancelled = true }
   }, [])
 
   const changeSetting = <Key extends keyof AppSettings>(
@@ -135,6 +145,7 @@ export function useSettings() {
   }
 
   return {
+    loaded,
     vimEnabled,
     showPreviewPosition,
     previewClickNavigationEnabled,
