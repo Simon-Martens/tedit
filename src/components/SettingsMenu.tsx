@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import type { PreviewMode } from '../types'
 import { Icon } from './Icon'
 
 export function SettingsMenu({
@@ -8,8 +9,8 @@ export function SettingsMenu({
   onShowPreviewPositionChange,
   previewClickNavigationEnabled,
   onPreviewClickNavigationEnabledChange,
-  canvasPreviewEnabled,
-  onCanvasPreviewEnabledChange,
+  previewMode,
+  onPreviewModeChange,
   autoScrollEnabled,
   onAutoScrollEnabledChange,
   lightThemeEnabled,
@@ -33,8 +34,8 @@ export function SettingsMenu({
   onShowPreviewPositionChange(enabled: boolean): void
   previewClickNavigationEnabled: boolean
   onPreviewClickNavigationEnabledChange(enabled: boolean): void
-  canvasPreviewEnabled: boolean
-  onCanvasPreviewEnabledChange(enabled: boolean): void
+  previewMode: PreviewMode
+  onPreviewModeChange(mode: PreviewMode): void
   autoScrollEnabled: boolean
   onAutoScrollEnabledChange(enabled: boolean): void
   lightThemeEnabled: boolean
@@ -163,42 +164,45 @@ export function SettingsMenu({
               onChange={(event) => onAutomaticErrorPopupEnabledChange(event.target.checked)}
             />
           </label>
-          <label className={`setting-row${canvasPreviewEnabled ? ' setting-disabled' : ''}`}>
+          <label className={`setting-row${previewMode !== 'svg' ? ' setting-disabled' : ''}`}>
             <span>
               <strong>Show position</strong>
-              <small>{canvasPreviewEnabled
-                ? 'Unavailable in canvas preview'
+              <small>{previewMode !== 'svg'
+                ? `Unavailable in ${previewMode} preview`
                 : 'Display the preview source marker'}</small>
             </span>
             <input
               type="checkbox"
               checked={showPreviewPosition}
-              disabled={canvasPreviewEnabled}
+              disabled={previewMode !== 'svg'}
               onChange={(event) => onShowPreviewPositionChange(event.target.checked)}
             />
           </label>
-          <label className={`setting-row${canvasPreviewEnabled ? ' setting-disabled' : ''}`}>
+          <label className={`setting-row${previewMode !== 'svg' && previewMode !== 'dom' ? ' setting-disabled' : ''}`}>
             <span>
               <strong>Jump to source</strong>
-              <small>{canvasPreviewEnabled
-                ? 'Unavailable in canvas preview'
+              <small>{previewMode !== 'svg' && previewMode !== 'dom'
+                ? `Unavailable in ${previewMode} preview`
                 : 'Jump to source when clicking the preview'}</small>
             </span>
             <input
               type="checkbox"
               checked={previewClickNavigationEnabled}
-              disabled={canvasPreviewEnabled}
+              disabled={previewMode !== 'svg' && previewMode !== 'dom'}
               onChange={(event) => onPreviewClickNavigationEnabledChange(event.target.checked)}
             />
           </label>
-          <label className="setting-row">
+          <label className={`setting-row${previewMode === 'html' ? ' setting-disabled' : ''}`}>
             <span>
               <strong>Autoscrolling</strong>
-              <small>Keep the preview in view while editing</small>
+              <small>{previewMode === 'html'
+                ? 'Unavailable in HTML preview'
+                : 'Keep the preview in view while editing'}</small>
             </span>
             <input
               type="checkbox"
               checked={autoScrollEnabled}
+              disabled={previewMode === 'html'}
               onChange={(event) => onAutoScrollEnabledChange(event.target.checked)}
             />
           </label>
@@ -224,14 +228,19 @@ export function SettingsMenu({
           </label>
           <label className="setting-row">
             <span>
-              <strong>Canvas preview</strong>
-              <small>Experimental raster preview with fewer DOM elements</small>
+              <strong>Preview format</strong>
+              <small>Vector, raster, paged DOM, or semantic HTML</small>
             </span>
-            <input
-              type="checkbox"
-              checked={canvasPreviewEnabled}
-              onChange={(event) => onCanvasPreviewEnabledChange(event.target.checked)}
-            />
+            <select
+              className="setting-select"
+              value={previewMode}
+              onChange={(event) => onPreviewModeChange(event.target.value as PreviewMode)}
+            >
+              <option value="svg">SVG</option>
+              <option value="canvas">Canvas</option>
+              <option value="dom">DOM (paged)</option>
+              <option value="html">HTML</option>
+            </select>
           </label>
         </div>
       )}

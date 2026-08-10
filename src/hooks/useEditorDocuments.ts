@@ -92,6 +92,15 @@ export function useEditorDocuments(): EditorDocumentsController {
       compileState: 'loading',
       compileDurationMs: undefined,
       pdfUrl: undefined,
+      pdfRevision: undefined,
+      pdfDependencyRevision: undefined,
+      pdfAttemptedRevision: undefined,
+      pdfAttemptedDependencyRevision: undefined,
+      html: undefined,
+      htmlRevision: undefined,
+      htmlDependencyRevision: undefined,
+      htmlAttemptedRevision: undefined,
+      htmlAttemptedDependencyRevision: undefined,
     })
   }
 

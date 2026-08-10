@@ -210,6 +210,7 @@ function createTinymistIpcController({ app, handleIpc, isAllowedPreviewRoot, onI
         typeof request?.documentId !== 'string'
         || typeof request.source !== 'string'
         || !Number.isSafeInteger(request.version)
+        || (request.includeHtml !== undefined && typeof request.includeHtml !== 'boolean')
       ) throw new Error('Invalid Tinymist compile request.')
       const previewFilePath = request.previewFilePath
         ? registry.normalizeDocumentPath(request.previewFilePath)

@@ -218,7 +218,10 @@ class TinymistLspService {
             synchronization: { didSave: true },
           },
         },
-        initializationOptions: { exportPdf: 'never' },
+        initializationOptions: {
+          exportPdf: 'never',
+          typstExtraArgs: ['--features=html'],
+        },
       }), 30_000, 'Timed out starting Tinymist language server.')
       if (generation !== this.generation) return
       await connection.sendNotification('initialized', {})
@@ -521,7 +524,7 @@ class TinymistLspService {
     }
   }
 
-  async compileNow({ documentId, source, version, previewFilePath, openDocuments = [] }, compileGeneration) {
+  async compileNow({ documentId, source, version, previewFilePath, includeHtml = false, openDocuments = [] }, compileGeneration) {
     if (compileGeneration !== this.compileGeneration) {
       throw new Error('Tinymist compilation was superseded by a newer request.')
     }
@@ -582,14 +585,14 @@ class TinymistLspService {
     try {
       result = await withTimeout(
         this.connection.sendRequest('workspace/executeCommand', {
-          command: 'tinymist.exportPdf',
+          command: includeHtml ? 'tinymist.exportHtml' : 'tinymist.exportPdf',
           arguments: [exportPath, {}, { write: false, open: false }],
         }, cancellation.token),
         30000,
-        'Timed out compiling the PDF with Tinymist.',
+        `Timed out compiling the ${includeHtml ? 'HTML' : 'PDF'} with Tinymist.`,
       )
     } catch (error) {
-      if (error instanceof Error && error.message === 'Timed out compiling the PDF with Tinymist.') {
+      if (error instanceof Error && error.message.startsWith('Timed out compiling the ')) {
         this.status(documentId, 'error', error.message)
         void this.stop()
       }
@@ -601,12 +604,14 @@ class TinymistLspService {
     if (compileGeneration !== this.compileGeneration) {
       throw new Error('Tinymist compilation was superseded by a newer request.')
     }
-    if (!result?.data) throw new Error('Tinymist did not return PDF data.')
-    const pdf = Buffer.from(result.data, 'base64')
+    if (!result?.data) throw new Error(`Tinymist did not return ${includeHtml ? 'HTML' : 'PDF'} data.`)
+    const data = Buffer.from(result.data, 'base64')
     return {
       version,
       durationMs: Date.now() - started,
-      pdf: pdf.buffer.slice(pdf.byteOffset, pdf.byteOffset + pdf.byteLength),
+      ...(includeHtml
+        ? { html: data.toString('utf8') }
+        : { pdf: data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) }),
     }
   }
 

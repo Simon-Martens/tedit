@@ -6,11 +6,13 @@ import {
   type KeyboardEvent,
   type PointerEvent,
 } from 'react'
-import type { EditorDocument, LanguageServerDocument, PreviewPosition, PreviewRoot, PreviewSourceReveal, SourceCursorLocation, SourceSyncStatus } from '../types'
+import type { EditorDocument, LanguageServerDocument, PreviewMode, PreviewPosition, PreviewRoot, PreviewSourceReveal, SourceCursorLocation, SourceSyncStatus } from '../types'
 import type { BibliographiesController } from '../hooks/useBibliographies'
 import { BibliographyPane } from './BibliographyPane'
 import { CompilationPane } from './CompilationPane'
 import { TypstPreview } from './TypstPreview'
+import { TypstHtmlPreview } from './TypstHtmlPreview'
+import { TypstDomPreview } from './TypstDomPreview'
 import { SourcePane } from './SourcePane'
 
 function clamp(value: number, minimum: number, maximum: number) {
@@ -32,7 +34,7 @@ export function Workspace({
   onCursorChange,
   showPreviewPosition,
   previewClickNavigationEnabled,
-  canvasPreviewEnabled,
+  previewMode,
   autoScrollEnabled,
   lightThemeEnabled,
   foldingEnabled,
@@ -61,7 +63,7 @@ export function Workspace({
   onCursorChange(line: number, column: number): void
   showPreviewPosition: boolean
   previewClickNavigationEnabled: boolean
-  canvasPreviewEnabled: boolean
+  previewMode: PreviewMode
   autoScrollEnabled: boolean
   lightThemeEnabled: boolean
   foldingEnabled: boolean
@@ -223,21 +225,44 @@ export function Workspace({
         aria-label="Typst preview and compilation output"
         className={`right-pane ${compilationOpen ? 'output-open' : 'output-hidden'}`}
       >
-        <TypstPreview
-          document={document}
-          pdfFileName={pdfFileName}
-          previewRoots={previewRoots}
-          onPreviewRootChange={stablePreviewRootChangeRef.current}
-          positions={previewPositions}
-          status={previewStatus}
-          showPreviewPosition={!canvasPreviewEnabled && showPreviewPosition}
-          previewClickNavigationEnabled={!canvasPreviewEnabled && previewClickNavigationEnabled}
-          canvasPreviewEnabled={canvasPreviewEnabled}
-          autoScrollEnabled={autoScrollEnabled}
-          renderBackoffMs={previewRenderBackoffMs}
-          onPreviewPoint={stablePreviewPointRef.current}
-          key={`${document.id}:${document.previewRootPath ?? document.filePath ?? ''}`}
-        />
+        {previewMode === 'html' ? (
+          <TypstHtmlPreview
+            document={document}
+            previewRoots={previewRoots}
+            onPreviewRootChange={stablePreviewRootChangeRef.current}
+            key={`${document.id}:${document.previewRootPath ?? document.filePath ?? ''}:html`}
+          />
+        ) : previewMode === 'dom' ? (
+          <TypstDomPreview
+            document={document}
+            pdfFileName={pdfFileName}
+            previewRoots={previewRoots}
+            onPreviewRootChange={stablePreviewRootChangeRef.current}
+            positions={previewPositions}
+            status={previewStatus}
+            showPreviewPosition={false}
+            previewClickNavigationEnabled={previewClickNavigationEnabled}
+            autoScrollEnabled={autoScrollEnabled}
+            onPreviewPoint={stablePreviewPointRef.current}
+            key={`${document.id}:${document.previewRootPath ?? document.filePath ?? ''}:dom`}
+          />
+        ) : (
+          <TypstPreview
+            document={document}
+            pdfFileName={pdfFileName}
+            previewRoots={previewRoots}
+            onPreviewRootChange={stablePreviewRootChangeRef.current}
+            positions={previewPositions}
+            status={previewStatus}
+            showPreviewPosition={previewMode === 'svg' && showPreviewPosition}
+            previewClickNavigationEnabled={previewMode === 'svg' && previewClickNavigationEnabled}
+            canvasPreviewEnabled={previewMode === 'canvas'}
+            autoScrollEnabled={autoScrollEnabled}
+            renderBackoffMs={previewRenderBackoffMs}
+            onPreviewPoint={stablePreviewPointRef.current}
+            key={`${document.id}:${document.previewRootPath ?? document.filePath ?? ''}`}
+          />
+        )}
         {compilationOpen && <CompilationPane document={document} />}
       </section>
     </section>

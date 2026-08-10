@@ -1,4 +1,5 @@
 export type CompilationState = 'loading' | 'compiling' | 'success' | 'error'
+export type PreviewMode = 'svg' | 'canvas' | 'dom' | 'html'
 
 export interface WritableFileHandle {
   name: string
@@ -130,7 +131,7 @@ export interface AppSettings {
   vimEnabled: boolean
   showPreviewPosition: boolean
   previewClickNavigationEnabled: boolean
-  canvasPreviewEnabled: boolean
+  previewMode: PreviewMode
   autoScrollEnabled: boolean
   lightThemeEnabled: boolean
   foldingEnabled: boolean
@@ -265,9 +266,10 @@ export interface DesktopApi {
     source: string
     version: number
     previewFilePath?: string
+    includeHtml?: boolean
     openDocuments: LanguageServerDocument[]
   }): Promise<
-    | { version: number; durationMs: number; pdf: ArrayBuffer; error?: never }
+    | { version: number; durationMs: number; pdf?: ArrayBuffer; html?: string; error?: never }
     | { cancelled: true; error?: never }
     | { error: string }
   >
@@ -361,12 +363,22 @@ export interface EditorDocument {
   repoName?: string
   fallbackUuid: string
   compileState: CompilationState
+  compileTarget?: 'pdf' | 'html'
   messages: string[]
   diagnostics: EditorDiagnostic[]
   languageServerDiagnostics?: EditorDiagnostic[]
   languageServerDiagnosticsSourceVersion?: number
   languageServerDiagnosticsClientVersion?: number
   pdfUrl?: string
+  pdfRevision?: number
+  pdfDependencyRevision?: number
+  pdfAttemptedRevision?: number
+  pdfAttemptedDependencyRevision?: number
+  html?: string
+  htmlRevision?: number
+  htmlDependencyRevision?: number
+  htmlAttemptedRevision?: number
+  htmlAttemptedDependencyRevision?: number
   compiledAt?: string
   compileDurationMs?: number
 }

@@ -1,7 +1,7 @@
 import { memo, useRef } from 'react'
 import { Icon } from './Icon'
 import { SettingsMenu } from './SettingsMenu'
-import type { EditorDocument } from '../types'
+import type { EditorDocument, PreviewMode } from '../types'
 import teditLogo from '../../build/icon.svg'
 
 interface ToolbarProps {
@@ -18,8 +18,8 @@ interface ToolbarProps {
   onShowPreviewPositionChange(enabled: boolean): void
   previewClickNavigationEnabled: boolean
   onPreviewClickNavigationEnabledChange(enabled: boolean): void
-  canvasPreviewEnabled: boolean
-  onCanvasPreviewEnabledChange(enabled: boolean): void
+  previewMode: PreviewMode
+  onPreviewModeChange(mode: PreviewMode): void
   autoScrollEnabled: boolean
   onAutoScrollEnabledChange(enabled: boolean): void
   lightThemeEnabled: boolean
@@ -60,8 +60,8 @@ function ToolbarContent({
   onShowPreviewPositionChange,
   previewClickNavigationEnabled,
   onPreviewClickNavigationEnabledChange,
-  canvasPreviewEnabled,
-  onCanvasPreviewEnabledChange,
+  previewMode,
+  onPreviewModeChange,
   autoScrollEnabled,
   onAutoScrollEnabledChange,
   lightThemeEnabled,
@@ -82,6 +82,11 @@ function ToolbarContent({
   const documentTitle = document
     ? [document.repoName, document.fileName].filter(Boolean).join(' / ')
     : 'No document'
+  const pdfUrl = document
+    && document.pdfRevision === document.sourceRevision
+    && document.pdfDependencyRevision === document.dependencyRevision
+    ? document.pdfUrl
+    : undefined
 
   return (
     <header className="topbar">
@@ -104,13 +109,13 @@ function ToolbarContent({
           <span>Save</span>
         </button>
         <a
-          className={document?.pdfUrl ? 'button-link' : 'button-link disabled'}
-          href={document?.pdfUrl}
+          className={pdfUrl ? 'button-link' : 'button-link disabled'}
+          href={pdfUrl}
           download={pdfFileName}
           title={pdfFileName ? `Download ${pdfFileName}` : 'No PDF available'}
-          aria-disabled={!document?.pdfUrl}
+          aria-disabled={!pdfUrl}
           onClick={(event) => {
-            if (!document?.pdfUrl) event.preventDefault()
+            if (!pdfUrl) event.preventDefault()
           }}
         >
           <Icon name="download" />
@@ -134,8 +139,8 @@ function ToolbarContent({
           onShowPreviewPositionChange={onShowPreviewPositionChange}
           previewClickNavigationEnabled={previewClickNavigationEnabled}
           onPreviewClickNavigationEnabledChange={onPreviewClickNavigationEnabledChange}
-          canvasPreviewEnabled={canvasPreviewEnabled}
-          onCanvasPreviewEnabledChange={onCanvasPreviewEnabledChange}
+          previewMode={previewMode}
+          onPreviewModeChange={onPreviewModeChange}
           autoScrollEnabled={autoScrollEnabled}
           onAutoScrollEnabledChange={onAutoScrollEnabledChange}
           lightThemeEnabled={lightThemeEnabled}
@@ -164,13 +169,17 @@ const MemoizedToolbar = memo(ToolbarContent, (previous, next) => (
   && previous.document?.repoName === next.document?.repoName
   && previous.document?.isDirty === next.document?.isDirty
   && previous.document?.pdfUrl === next.document?.pdfUrl
+  && previous.document?.pdfRevision === next.document?.pdfRevision
+  && previous.document?.pdfDependencyRevision === next.document?.pdfDependencyRevision
+  && previous.document?.sourceRevision === next.document?.sourceRevision
+  && previous.document?.dependencyRevision === next.document?.dependencyRevision
   && previous.pdfFileName === next.pdfFileName
   && previous.docsOpen === next.docsOpen
   && previous.docsAvailable === next.docsAvailable
   && previous.vimEnabled === next.vimEnabled
   && previous.showPreviewPosition === next.showPreviewPosition
   && previous.previewClickNavigationEnabled === next.previewClickNavigationEnabled
-  && previous.canvasPreviewEnabled === next.canvasPreviewEnabled
+  && previous.previewMode === next.previewMode
   && previous.autoScrollEnabled === next.autoScrollEnabled
   && previous.lightThemeEnabled === next.lightThemeEnabled
   && previous.foldingEnabled === next.foldingEnabled
@@ -188,7 +197,7 @@ export function Toolbar(props: ToolbarProps) {
   const onVimEnabledChange = useLatestCallback(props.onVimEnabledChange)
   const onShowPreviewPositionChange = useLatestCallback(props.onShowPreviewPositionChange)
   const onPreviewClickNavigationEnabledChange = useLatestCallback(props.onPreviewClickNavigationEnabledChange)
-  const onCanvasPreviewEnabledChange = useLatestCallback(props.onCanvasPreviewEnabledChange)
+  const onPreviewModeChange = useLatestCallback(props.onPreviewModeChange)
   const onAutoScrollEnabledChange = useLatestCallback(props.onAutoScrollEnabledChange)
   const onLightThemeEnabledChange = useLatestCallback(props.onLightThemeEnabledChange)
   const onFoldingEnabledChange = useLatestCallback(props.onFoldingEnabledChange)
@@ -206,7 +215,7 @@ export function Toolbar(props: ToolbarProps) {
     onVimEnabledChange={onVimEnabledChange}
     onShowPreviewPositionChange={onShowPreviewPositionChange}
     onPreviewClickNavigationEnabledChange={onPreviewClickNavigationEnabledChange}
-    onCanvasPreviewEnabledChange={onCanvasPreviewEnabledChange}
+    onPreviewModeChange={onPreviewModeChange}
     onAutoScrollEnabledChange={onAutoScrollEnabledChange}
     onLightThemeEnabledChange={onLightThemeEnabledChange}
     onFoldingEnabledChange={onFoldingEnabledChange}

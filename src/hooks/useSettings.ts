@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { reportError } from '../lib/logging'
-import type { AppSettings } from '../types'
+import type { AppSettings, PreviewMode } from '../types'
 
 function browserSetting(key: string, fallback: boolean) {
   const value = localStorage.getItem(key)
@@ -14,6 +14,12 @@ function browserNumberSetting(key: string, fallback: number) {
   return Number.isFinite(value) ? value : fallback
 }
 
+function browserPreviewMode(): PreviewMode {
+  const value = localStorage.getItem('tedit.preview-mode')
+  if (value === 'svg' || value === 'canvas' || value === 'dom' || value === 'html') return value
+  return browserSetting('tedit.canvas-preview', false) ? 'canvas' : 'svg'
+}
+
 export function useSettings() {
   const [vimEnabled, setVimEnabled] = useState(() => (
     window.typstDesktop ? false : browserSetting('tedit.vim-mode', false)
@@ -24,8 +30,8 @@ export function useSettings() {
   const [previewClickNavigationEnabled, setPreviewClickNavigationEnabled] = useState(() => (
     window.typstDesktop ? true : browserSetting('tedit.preview-click-navigation', true)
   ))
-  const [canvasPreviewEnabled, setCanvasPreviewEnabled] = useState(() => (
-    window.typstDesktop ? false : browserSetting('tedit.canvas-preview', false)
+  const [previewMode, setPreviewMode] = useState<PreviewMode>(() => (
+    window.typstDesktop ? 'svg' : browserPreviewMode()
   ))
   const [autoScrollEnabled, setAutoScrollEnabled] = useState(() => (
     window.typstDesktop ? true : browserSetting('tedit.autoscroll', true)
@@ -67,8 +73,8 @@ export function useSettings() {
   }, [previewClickNavigationEnabled])
 
   useEffect(() => {
-    if (!window.typstDesktop) localStorage.setItem('tedit.canvas-preview', String(canvasPreviewEnabled))
-  }, [canvasPreviewEnabled])
+    if (!window.typstDesktop) localStorage.setItem('tedit.preview-mode', previewMode)
+  }, [previewMode])
 
   useEffect(() => {
     if (!window.typstDesktop) localStorage.setItem('tedit.autoscroll', String(autoScrollEnabled))
@@ -107,7 +113,7 @@ export function useSettings() {
       setVimEnabled(settings.vimEnabled)
       setShowPreviewPosition(settings.showPreviewPosition)
       setPreviewClickNavigationEnabled(settings.previewClickNavigationEnabled)
-      setCanvasPreviewEnabled(settings.canvasPreviewEnabled)
+      setPreviewMode(settings.previewMode)
       setAutoScrollEnabled(settings.autoScrollEnabled)
       setLightThemeEnabled(settings.lightThemeEnabled)
       setFoldingEnabled(settings.foldingEnabled)
@@ -132,7 +138,7 @@ export function useSettings() {
     vimEnabled,
     showPreviewPosition,
     previewClickNavigationEnabled,
-    canvasPreviewEnabled,
+    previewMode,
     autoScrollEnabled,
     lightThemeEnabled,
     foldingEnabled,
@@ -148,10 +154,10 @@ export function useSettings() {
       value,
       setPreviewClickNavigationEnabled,
     ),
-    changeCanvasPreviewEnabled: (value: boolean) => changeSetting(
-      'canvasPreviewEnabled',
+    changePreviewMode: (value: PreviewMode) => changeSetting(
+      'previewMode',
       value,
-      setCanvasPreviewEnabled,
+      setPreviewMode,
     ),
     changeAutoScrollEnabled: (value: boolean) => changeSetting('autoScrollEnabled', value, setAutoScrollEnabled),
     changeLightThemeEnabled: (value: boolean) => changeSetting('lightThemeEnabled', value, setLightThemeEnabled),

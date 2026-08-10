@@ -20,6 +20,7 @@ export function useSourcePreviewSync(
   const lastLocationRef = useRef<SourceCursorLocation | undefined>(undefined)
   const pendingLocationRef = useRef<SourceCursorLocation | undefined>(undefined)
   const locateTimerRef = useRef<number | undefined>(undefined)
+  const activeDocumentIdRef = useRef<string | undefined>(undefined)
   const requestIdRef = useRef(0)
   const appliedRequestIdRef = useRef(0)
   const memoryFiles = documents.flatMap((openDocument) => openDocument.filePath ? [{
@@ -40,13 +41,18 @@ export function useSourcePreviewSync(
 
   useEffect(() => {
     const desktop = window.typstDesktop
-    lastLocationRef.current = undefined
+    if (activeDocumentIdRef.current !== document?.id) lastLocationRef.current = undefined
+    activeDocumentIdRef.current = document?.id
     setSourceReveal(undefined)
     requestIdRef.current = 0
     appliedRequestIdRef.current = 0
     setPositions([])
     if (!document) {
       setStatus(DISABLED_STATUS)
+      return
+    }
+    if (!enabled) {
+      setStatus({ documentId: document.id, state: 'disabled', message: 'Vector preview is disabled in HTML mode.' })
       return
     }
     setStatus({ documentId: document.id, state: 'starting', message: 'Starting source synchronization...' })
@@ -98,12 +104,12 @@ export function useSourcePreviewSync(
   }, [document?.id, document?.filePath, previewFilePath, enabled])
 
   useEffect(() => {
-    if (!window.typstDesktop || !document) return
+    if (!enabled || !window.typstDesktop || !document) return
     const timeout = window.setTimeout(() => {
       window.typstDesktop?.updateSourceSync({ documentId: document.id, source: document.source, memoryFiles })
     }, SOURCE_UPDATE_SETTLE_MS)
     return () => window.clearTimeout(timeout)
-  }, [document?.id, document?.sourceRevision, memoryFilesKey])
+  }, [document?.id, document?.sourceRevision, memoryFilesKey, enabled])
 
   useEffect(() => {
     if (enabled && document && (
@@ -142,7 +148,7 @@ export function useSourcePreviewSync(
   }
 
   const revealPreviewSource = (position: PreviewPosition) => {
-    if (!document) return
+    if (!enabled || !document) return
     window.typstDesktop?.revealPreviewSource({ documentId: document.id, ...position })
   }
 

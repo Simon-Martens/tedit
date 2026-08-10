@@ -6,7 +6,7 @@ const defaultSettings = {
   vimEnabled: false,
   showPreviewPosition: false,
   previewClickNavigationEnabled: true,
-  canvasPreviewEnabled: false,
+  previewMode: 'svg',
   autoScrollEnabled: true,
   lightThemeEnabled: false,
   foldingEnabled: true,
@@ -22,14 +22,19 @@ function createSettingsPersistence({ app, handleIpc }) {
   let settingsWrite = Promise.resolve()
 
   function normalizeSettings(settings) {
-    return Object.fromEntries(Object.keys(defaultSettings).flatMap((key) => {
+    const normalized = Object.fromEntries(Object.keys(defaultSettings).flatMap((key) => {
       const value = settings?.[key]
       if (typeof defaultSettings[key] === 'boolean' && typeof value === 'boolean') return [[key, value]]
       if (typeof defaultSettings[key] === 'number' && Number.isFinite(value)) {
         return [[key, Math.max(0, Math.min(5_000, Math.round(value)))]]
       }
+      if (key === 'previewMode' && ['svg', 'canvas', 'dom', 'html'].includes(value)) return [[key, value]]
       return []
     }))
+    if (!normalized.previewMode && typeof settings?.canvasPreviewEnabled === 'boolean') {
+      normalized.previewMode = settings.canvasPreviewEnabled ? 'canvas' : 'svg'
+    }
+    return normalized
   }
 
   async function readSettings() {

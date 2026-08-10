@@ -899,6 +899,23 @@ a:focus-visible {
   border-color: var(--color-accent);
 }
 
+.setting-row .setting-select {
+  width: 72px;
+  height: 26px;
+  flex: 0 0 auto;
+  padding: 0 5px;
+  border: 1px solid #51544a;
+  border-radius: 4px;
+  outline: 0;
+  color: #dfe0da;
+  background: #181915;
+  font: 10px var(--font-mono);
+}
+
+.setting-row .setting-select:focus {
+  border-color: var(--color-accent);
+}
+
 .topbar button,
 .button-link {
   height: 28px;
@@ -1232,6 +1249,12 @@ a:focus-visible {
   border-color: #b5b9ad;
   color: #30342b;
   background: #fff;
+}
+
+.theme-light .setting-row .setting-select {
+  border-color: #bfc2b8;
+  color: #30342b;
+  background: #f9f9f6;
 }
 
 .theme-light .setting-row input:checked::after {

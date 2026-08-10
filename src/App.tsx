@@ -39,11 +39,12 @@ function App() {
     editor.documents,
     editor.updateDocument,
     languageServer.status,
+    settings.previewMode === 'html',
   )
   const sourcePreviewSync = useSourcePreviewSync(
     editor.activeDocument,
     editor.documents,
-    true,
+    settings.previewMode !== 'html',
   )
   const files = useFileCommands(editor)
   const desktopSession = useDesktopSession(editor)
@@ -145,8 +146,8 @@ function App() {
         onShowPreviewPositionChange={settings.changeShowPreviewPosition}
         previewClickNavigationEnabled={settings.previewClickNavigationEnabled}
         onPreviewClickNavigationEnabledChange={settings.changePreviewClickNavigationEnabled}
-        canvasPreviewEnabled={settings.canvasPreviewEnabled}
-        onCanvasPreviewEnabledChange={settings.changeCanvasPreviewEnabled}
+        previewMode={settings.previewMode}
+        onPreviewModeChange={settings.changePreviewMode}
         autoScrollEnabled={settings.autoScrollEnabled}
         onAutoScrollEnabledChange={settings.changeAutoScrollEnabled}
         lightThemeEnabled={settings.lightThemeEnabled}
@@ -188,7 +189,7 @@ function App() {
           onCursorChange={updateFooterCursorPosition}
           showPreviewPosition={settings.showPreviewPosition}
           previewClickNavigationEnabled={settings.previewClickNavigationEnabled}
-          canvasPreviewEnabled={settings.canvasPreviewEnabled}
+          previewMode={settings.previewMode}
           autoScrollEnabled={settings.autoScrollEnabled}
           lightThemeEnabled={settings.lightThemeEnabled}
           foldingEnabled={settings.foldingEnabled}

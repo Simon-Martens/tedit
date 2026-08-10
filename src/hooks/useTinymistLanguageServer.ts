@@ -148,6 +148,10 @@ export function useTinymistLanguageServer(
     ) {
       updateRef.current(document.id, {
         attemptedRevision: undefined,
+        pdfAttemptedRevision: undefined,
+        pdfAttemptedDependencyRevision: undefined,
+        htmlAttemptedRevision: undefined,
+        htmlAttemptedDependencyRevision: undefined,
         compileState: 'loading',
         messages: ['Restarting Tinymist...'],
       })

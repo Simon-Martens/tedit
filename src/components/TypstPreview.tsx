@@ -895,6 +895,8 @@ function TypstPreviewContent({
     }
     const removeUpdateListener = desktop.onPreviewUpdate((update) => {
       if (update.documentId !== document.id) return
+      if (awaitingFreshSnapshotRef.current && update.kind !== 'new') return
+      if (update.kind === 'new') awaitingFreshSnapshotRef.current = false
       const delay = noteDocumentUpdate()
       if (update.kind === 'new') updatesRef.current = []
       updatesRef.current.push({ kind: update.kind, data: update.data })
@@ -903,11 +905,9 @@ function TypstPreviewContent({
         && !awaitingFreshSnapshotRef.current
       processUpdates(initialSnapshot ? 0 : delay)
     })
-    if (modeChanged) desktop.refreshSourceSync({ documentId: document.id })
-    else if (refreshOnWorkerStartRef.current) {
-      refreshOnWorkerStartRef.current = false
-      desktop.refreshSourceSync({ documentId: document.id })
-    }
+    refreshOnWorkerStartRef.current = false
+    awaitingFreshSnapshotRef.current = true
+    desktop.refreshSourceSync({ documentId: document.id })
     return () => {
       removeUpdateListener()
       worker.terminate()
@@ -1163,11 +1163,15 @@ function TypstPreviewContent({
 
   const printPdf = async () => {
     const desktop = window.typstDesktop
-    if (!desktop || !document.pdfUrl || printing) return
+    const pdfUrl = document.pdfRevision === document.sourceRevision
+      && document.pdfDependencyRevision === document.dependencyRevision
+      ? document.pdfUrl
+      : undefined
+    if (!desktop || !pdfUrl || printing) return
     setPrinting(true)
     setPrintError(undefined)
     try {
-      const response = await fetch(document.pdfUrl)
+      const response = await fetch(pdfUrl)
       if (!response.ok) throw new Error(`Could not read the generated PDF (${response.status}).`)
       const result = await desktop.printPdf(new Uint8Array(await response.arrayBuffer()))
       if (!result.success && result.failureReason && !/cancel/i.test(result.failureReason)) {
@@ -1180,6 +1184,11 @@ function TypstPreviewContent({
       setPrinting(false)
     }
   }
+
+  const currentPdfUrl = document.pdfRevision === document.sourceRevision
+    && document.pdfDependencyRevision === document.dependencyRevision
+    ? document.pdfUrl
+    : undefined
 
   return (
     <section className="preview-panel" aria-label="Typst preview">
@@ -1210,7 +1219,7 @@ function TypstPreviewContent({
           page={pageNumber}
           pageCount={pageCount}
           zoom={zoom}
-          pdfUrl={document.pdfUrl}
+          pdfUrl={currentPdfUrl}
           previewReady={pageCount > 0}
           rotationEnabled={false}
           fileName={pdfFileName}
@@ -1256,6 +1265,10 @@ const MemoizedTypstPreview = memo(TypstPreviewContent, (previous, next) => (
   && previous.document.filePath === next.document.filePath
   && previous.document.previewRootPath === next.document.previewRootPath
   && previous.document.pdfUrl === next.document.pdfUrl
+  && previous.document.pdfRevision === next.document.pdfRevision
+  && previous.document.pdfDependencyRevision === next.document.pdfDependencyRevision
+  && previous.document.sourceRevision === next.document.sourceRevision
+  && previous.document.dependencyRevision === next.document.dependencyRevision
   && previous.pdfFileName === next.pdfFileName
   && previous.previewRoots === next.previewRoots
   && previous.positions === next.positions
