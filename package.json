@@ -2,7 +2,7 @@
   "name": "tedit",
   "description": "A desktop Typst editor with a live Tinymist preview.",
   "private": true,
-  "version": "0.1.0-beta.6",
+  "version": "0.1.0-beta.7",
   "type": "module",
   "main": "electron/main.cjs",
   "desktopName": "tedit.desktop",
